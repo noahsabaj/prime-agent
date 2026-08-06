@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../../../src/config.js";
 
@@ -40,7 +41,9 @@ describe("issue #2791 fs.watch error event crashes process", () => {
 	});
 
 	it("process should survive an error event on the theme FSWatcher", () => {
-		const themeModulePath = join(__dirname, "../../../src/modes/interactive/theme/theme.js").replace(/\\/g, "/");
+		// A Windows absolute path is not a valid ESM specifier ("d:" is not a
+		// supported scheme); the loader needs a file:// URL.
+		const themeModuleSpecifier = pathToFileURL(join(__dirname, "../../../src/modes/interactive/theme/theme.js")).href;
 		const agentDir = join(tempRoot, "agent").replace(/\\/g, "/");
 
 		// Script that sets up the watcher and emits a synthetic error on it.
@@ -50,7 +53,7 @@ describe("issue #2791 fs.watch error event crashes process", () => {
 		writeFileSync(
 			scriptPath,
 			`
-import { setTheme, stopThemeWatcher } from "${themeModulePath}";
+import { setTheme, stopThemeWatcher } from "${themeModuleSpecifier}";
 
 process.env[${JSON.stringify(ENV_AGENT_DIR)}] = ${JSON.stringify(agentDir)};
 

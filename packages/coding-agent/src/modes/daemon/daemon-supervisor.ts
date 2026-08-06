@@ -108,8 +108,10 @@ import {
 	DAEMON_WORKER_ACTIVE_SESSION_ID_ENV,
 	DAEMON_WORKER_RECOVERY_JOURNAL_ENV,
 	DAEMON_WORKER_ROLE_ENV,
+	DAEMON_WORKER_STARTUP_GATE_CANCEL,
 	DAEMON_WORKER_STARTUP_GATE_COMMIT,
 	DAEMON_WORKER_STARTUP_GATE_FD_ENV,
+	DAEMON_WORKER_STARTUP_GATE_PATH_ENV,
 	DAEMON_WORKER_SUPERVISOR_SOCKET_ENV,
 	DAEMON_WORKER_TOKEN_ENV,
 	type DaemonCreateCommand,
@@ -360,7 +362,72 @@ function unrefDelay(ms: number): Promise<void> {
 	return new Promise((resolveDelay) => setTimeout(resolveDelay, ms).unref());
 }
 
-function commitWorkerStartupGate(gate: Writable): Promise<void> {
+/**
+ * The channel a supervisor uses to release (or abort) a worker's startup.
+ *
+ * POSIX hands the worker a pipe on fd 3: writing the commit marker and closing
+ * releases it, destroying it unwritten cancels it. Windows cannot inherit a pipe
+ * above fd 2, so the same two signals go through a file the worker polls.
+ */
+interface WorkerStartupGate {
+	/** Extra env the worker needs to find its gate. */
+	env: Record<string, string>;
+	/** stdio slot for the gate pipe, or undefined when the gate is a file. */
+	stdioSlot: "pipe" | undefined;
+	/** Bind to the spawned child; throws if the pipe transport failed to attach. */
+	attach(child: ChildProcess): void;
+	commit(): Promise<void>;
+	cancel(): void;
+	cleanup(): void;
+}
+
+function createWorkerStartupGate(descriptorDir: string, workerId: string): WorkerStartupGate {
+	if (process.platform !== "win32") {
+		let pipe: Writable | undefined;
+		return {
+			env: { [DAEMON_WORKER_STARTUP_GATE_FD_ENV]: String(WORKER_STARTUP_GATE_FD) },
+			stdioSlot: "pipe",
+			attach(child) {
+				const slot = child.stdio[WORKER_STARTUP_GATE_FD];
+				if (!(slot instanceof Writable)) {
+					throw new Error("Failed to create daemon session worker startup gate");
+				}
+				pipe = slot;
+			},
+			commit: () => commitWorkerStartupGatePipe(pipe as Writable),
+			cancel: () => pipe?.destroy(),
+			cleanup: () => pipe?.destroy(),
+		};
+	}
+	const gatePath = join(descriptorDir, `${workerId}.gate`);
+	const writeMarker = (marker: string): void => {
+		const tempPath = `${gatePath}.${process.pid}.${randomUUID()}.tmp`;
+		writeFileSync(tempPath, marker, { mode: 0o600 });
+		renameSync(tempPath, gatePath);
+	};
+	return {
+		env: { [DAEMON_WORKER_STARTUP_GATE_PATH_ENV]: gatePath },
+		stdioSlot: undefined,
+		attach: () => {},
+		commit: async () => writeMarker(DAEMON_WORKER_STARTUP_GATE_COMMIT),
+		cancel: () => {
+			try {
+				writeMarker(DAEMON_WORKER_STARTUP_GATE_CANCEL);
+			} catch {
+				// The worker's own deadline and parent-liveness check still release it.
+			}
+		},
+		cleanup: () => {
+			try {
+				rmSync(gatePath, { force: true });
+			} catch {
+				// A leftover gate file is harmless; the name is unique per worker.
+			}
+		},
+	};
+}
+
+function commitWorkerStartupGatePipe(gate: Writable): Promise<void> {
 	return new Promise((resolveCommit, rejectCommit) => {
 		let settled = false;
 		const finish = (error?: Error | null) => {
@@ -2116,6 +2183,7 @@ export class DaemonSupervisor {
 			existing?.descriptor.orphanProcessJournalPath ?? join(this.descriptorDir, `${workerId}.orphans.jsonl`);
 		const launch = createCliSubprocessLaunchSpec(["--mode", "daemon", "--daemon-socket", socketPath]);
 		await this.assertRecoveryAllowed();
+		const startupGate = createWorkerStartupGate(this.descriptorDir, workerId);
 		const child: ChildProcess = spawn(launch.command, launch.args, {
 			cwd: createCommand.config?.cwd ?? process.cwd(),
 			detached: true,
@@ -2127,12 +2195,14 @@ export class DaemonSupervisor {
 				[DAEMON_WORKER_ACTIVE_SESSION_ID_ENV]: rootActiveSessionId,
 				[DAEMON_WORKER_SUPERVISOR_SOCKET_ENV]: this.socketPath,
 				[DAEMON_WORKER_RECOVERY_JOURNAL_ENV]: recoveryJournalPath,
-				[DAEMON_WORKER_STARTUP_GATE_FD_ENV]: String(WORKER_STARTUP_GATE_FD),
+				...startupGate.env,
 				[ORPHAN_PROCESS_JOURNAL_ENV]: orphanProcessJournalPath,
 				[SESSION_LEASES_ENABLED_ENV]: "1",
 				[SESSION_LEASE_OWNER_ID_ENV]: rootActiveSessionId,
 			}),
-			stdio: ["ignore", "ignore", "pipe", "pipe"],
+			stdio: startupGate.stdioSlot
+				? ["ignore", "ignore", "pipe", startupGate.stdioSlot]
+				: ["ignore", "ignore", "pipe"],
 		});
 		const detachWorkerStderr = child.stderr
 			? attachJsonlLineReader(child.stderr, (line) => this.log(`Session worker ${workerId} stderr: ${line}`), {
@@ -2147,7 +2217,6 @@ export class DaemonSupervisor {
 				`Session worker ${workerId} process error: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		});
-		const startupGate = child.stdio[WORKER_STARTUP_GATE_FD];
 		const previousDescriptor = existing?.descriptor;
 		const previousIntentionalStop = existing?.intentionalStop;
 		let descriptorAssigned = false;
@@ -2158,9 +2227,7 @@ export class DaemonSupervisor {
 			if (!child.pid) {
 				throw new Error("Failed to obtain daemon session worker pid");
 			}
-			if (!(startupGate instanceof Writable)) {
-				throw new Error("Failed to create daemon session worker startup gate");
-			}
+			startupGate.attach(child);
 			childPid = child.pid;
 			childProcessStartId = getProcessStartId(childPid);
 			await this.assertRecoveryAllowed();
@@ -2203,9 +2270,8 @@ export class DaemonSupervisor {
 			worker.intentionalStop = false;
 			this.workers.set(workerId, worker);
 		} catch (error) {
-			if (startupGate instanceof Writable) {
-				startupGate.destroy();
-			}
+			startupGate.cancel();
+			startupGate.cleanup();
 			await childClosed;
 			child.unref();
 			try {
@@ -2225,9 +2291,10 @@ export class DaemonSupervisor {
 
 		try {
 			try {
-				await commitWorkerStartupGate(startupGate);
+				await startupGate.commit();
 			} catch (error) {
-				startupGate.destroy();
+				startupGate.cancel();
+				startupGate.cleanup();
 				await childClosed;
 				throw error;
 			} finally {

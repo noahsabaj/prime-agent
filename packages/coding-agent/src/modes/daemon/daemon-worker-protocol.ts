@@ -1,4 +1,4 @@
-import { closeSync, readFileSync } from "node:fs";
+import { closeSync, readFileSync, rmSync } from "node:fs";
 import type {
 	AgentSessionMessageAgentSummary,
 	AgentSessionMessageDeliveryMode,
@@ -16,7 +16,16 @@ export const DAEMON_WORKER_ACTIVE_SESSION_ID_ENV = "PRIME_AGENT_INTERNAL_DAEMON_
 export const DAEMON_WORKER_SUPERVISOR_SOCKET_ENV = "PRIME_AGENT_INTERNAL_DAEMON_SUPERVISOR_SOCKET";
 export const DAEMON_WORKER_RECOVERY_JOURNAL_ENV = "PRIME_AGENT_INTERNAL_DAEMON_WORKER_RECOVERY_JOURNAL";
 export const DAEMON_WORKER_STARTUP_GATE_FD_ENV = "PRIME_AGENT_INTERNAL_DAEMON_WORKER_STARTUP_GATE_FD";
+/**
+ * Windows cannot inherit a pipe above fd 2, so the gate there is a file the
+ * supervisor writes and the worker polls. Same contract, different transport.
+ */
+export const DAEMON_WORKER_STARTUP_GATE_PATH_ENV = "PRIME_AGENT_INTERNAL_DAEMON_WORKER_STARTUP_GATE_PATH";
 export const DAEMON_WORKER_STARTUP_GATE_COMMIT = "start\n";
+export const DAEMON_WORKER_STARTUP_GATE_CANCEL = "cancel\n";
+/** How long a worker waits for its supervisor to commit or cancel the gate. */
+const STARTUP_GATE_PATH_TIMEOUT_MS = 120_000;
+const STARTUP_GATE_PATH_POLL_MS = 20;
 export type DaemonWorkerLifecycle = "starting" | "ready" | "recovering" | "failed";
 
 export type DaemonWorkerFrameHeader =
@@ -115,7 +124,63 @@ export function isDaemonWorkerProcess(environment: NodeJS.ProcessEnv = process.e
 	return environment[DAEMON_WORKER_ROLE_ENV] === "1";
 }
 
+/**
+ * Block until the supervisor commits this worker's startup, or throw if it
+ * cancels or never answers.
+ *
+ * The file transport polls synchronously: startup has not reached the event
+ * loop yet, so there is nothing to await on. The parent's liveness bounds the
+ * wait, since a supervisor that died mid-launch will never write either marker.
+ */
+function waitForDaemonWorkerStartupGatePath(gatePath: string): void {
+	const deadline = Date.now() + STARTUP_GATE_PATH_TIMEOUT_MS;
+	const supervisorPid = process.ppid;
+	const sleeper = new Int32Array(new SharedArrayBuffer(4));
+	while (Date.now() < deadline) {
+		let marker: string | undefined;
+		try {
+			marker = readFileSync(gatePath, "utf8");
+		} catch {
+			// Not written yet.
+		}
+		if (marker === DAEMON_WORKER_STARTUP_GATE_COMMIT) {
+			// The worker owns the gate file once it has observed the commit; the
+			// supervisor must not race it by deleting the marker first.
+			try {
+				rmSync(gatePath, { force: true });
+			} catch {
+				// A leftover gate file is harmless; the name is unique per worker.
+			}
+			return;
+		}
+		if (marker !== undefined && marker.length > 0) {
+			throw new Error("Daemon session worker startup was cancelled");
+		}
+		if (supervisorPid > 0 && !isProcessAlive(supervisorPid)) {
+			throw new Error("Daemon session worker startup was cancelled");
+		}
+		Atomics.wait(sleeper, 0, 0, STARTUP_GATE_PATH_POLL_MS);
+	}
+	throw new Error("Timed out waiting for the daemon session worker startup gate");
+}
+
+function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		// EPERM means the pid exists but is not signalable by us.
+		return (error as NodeJS.ErrnoException).code === "EPERM";
+	}
+}
+
 export function waitForDaemonWorkerStartupGate(environment: NodeJS.ProcessEnv = process.env): void {
+	const gatePath = environment[DAEMON_WORKER_STARTUP_GATE_PATH_ENV];
+	if (gatePath !== undefined) {
+		delete environment[DAEMON_WORKER_STARTUP_GATE_PATH_ENV];
+		waitForDaemonWorkerStartupGatePath(gatePath);
+		return;
+	}
 	const rawFd = environment[DAEMON_WORKER_STARTUP_GATE_FD_ENV];
 	if (rawFd === undefined) {
 		return;

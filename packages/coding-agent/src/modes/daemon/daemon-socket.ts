@@ -102,6 +102,23 @@ export function normalizeDaemonSocketPath(socketPath: string): string {
 }
 
 /**
+ * A real directory to keep a socket's sidecar files (locks, markers) in.
+ *
+ * On unix the socket is a file, so its own directory is the natural home. A
+ * Windows pipe name is not a filesystem path at all — `dirname` on it yields
+ * something like `D:\pipe`, and every sidecar write fails with ENOENT — so
+ * those files go to the per-user socket directory instead.
+ */
+export function daemonSocketSidecarDir(socketPath: string): string {
+	if (process.platform !== "win32") {
+		return dirname(socketPath);
+	}
+	const dir = defaultDaemonSocketDir();
+	mkdirSync(dir, { recursive: true });
+	return dir;
+}
+
+/**
  * Every prime-agent pipe currently being served for this user.
  *
  * A named pipe exists only while its server holds it open, so unlike the unix

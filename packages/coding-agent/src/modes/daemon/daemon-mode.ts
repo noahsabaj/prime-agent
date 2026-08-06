@@ -182,6 +182,7 @@ import { DaemonSessionSummarizer } from "./daemon-session-summarizer.js";
 import {
 	cleanupDaemonSocketPath,
 	type DaemonSocketIdentity,
+	daemonSocketSidecarDir,
 	defaultDaemonSocketPath,
 	getDaemonSocketIdentity,
 	prepareDaemonSocketPath,
@@ -756,7 +757,7 @@ export class AgentDaemon {
 		}
 		this.supervisorLaunchInProgress = true;
 		const key = createHash("sha256").update(supervisorSocketPath).digest("hex").slice(0, 12);
-		const lockDirectory = join(dirname(supervisorSocketPath), `.supervisor-launch-${key}.lock`);
+		const lockDirectory = join(daemonSocketSidecarDir(supervisorSocketPath), `.supervisor-launch-${key}.lock`);
 		let ownsLock = false;
 		try {
 			for (let attempt = 0; attempt < 3 && !ownsLock; attempt++) {
