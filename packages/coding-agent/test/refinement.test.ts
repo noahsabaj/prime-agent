@@ -1,6 +1,6 @@
 import { appendFileSync, chmodSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type * as PiAi from "@earendil-works/pi-ai";
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
@@ -218,7 +218,7 @@ describe("harness refinement", () => {
 		const statePath = saveHarnessState(harnessStateDir, state);
 
 		expect(loadHarnessState(harnessStateDir).entries.memory.memory_entry).toBeDefined();
-		expect(readdirSync(harnessStateDir)).toEqual([statePath.split("/").at(-1)]);
+		expect(readdirSync(harnessStateDir)).toEqual([basename(statePath)]);
 		chmodSync(statePath, 0o600);
 		saveHarnessState(harnessStateDir, state);
 		expectFileMode(statePath, 0o600);

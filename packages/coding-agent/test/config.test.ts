@@ -404,7 +404,9 @@ describe("detectInstallMethod", () => {
 		});
 	});
 
-	test("does not self-update when npm install path is not writable", () => {
+	// Windows has no POSIX mode: chmod cannot make a directory unwritable (only
+	// the read-only attribute on files), so there is no way to stage this.
+	test.skipIf(process.platform === "win32")("does not self-update when npm install path is not writable", () => {
 		const { packageDir } = createNpmPrefixInstall();
 		chmodSync(packageDir, 0o500);
 

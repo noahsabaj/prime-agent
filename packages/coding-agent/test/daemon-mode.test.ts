@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -45,6 +45,18 @@ import {
 import type { SessionSummary } from "../src/modes/daemon/daemon-session-list.js";
 import { DAEMON_WORKER_SUPERVISOR_SOCKET_ENV } from "../src/modes/daemon/daemon-worker-protocol.js";
 import { SYMLINKS_SUPPORTED } from "./utilities.js";
+
+/**
+ * A path the local net stack can listen on.
+ *
+ * Windows has no unix sockets, so the fake supervisor sits on a named pipe —
+ * the same thing the real supervisor does there.
+ */
+function fakeSupervisorSocketPath(dir: string, name: string): string {
+	return process.platform === "win32"
+		? `\\\\.\\pipe\\pi-fake-supervisor-${basename(dir)}-${name}`
+		: join(dir, `${name}.sock`);
+}
 
 describe("daemon mode helpers", () => {
 	it("preserves envelope client identity while registering prompt admission", () => {
@@ -1482,7 +1494,7 @@ describe("daemon mode helpers", () => {
 
 	it("does not retry supervisor agent-message rejections", async () => {
 		const tempDir = mkdtempSync(join(tmpdir(), "pa-msg-"));
-		const socketPath = join(tempDir, "d.sock");
+		const socketPath = fakeSupervisorSocketPath(tempDir, "d");
 		let connectionCount = 0;
 		const server: Server = createServer((socket) => {
 			connectionCount++;
@@ -1557,7 +1569,7 @@ describe("daemon mode helpers", () => {
 
 	it("routes worker-local session renames through the supervisor", async () => {
 		const tempDir = mkdtempSync(join(tmpdir(), "pa-worker-rename-"));
-		const socketPath = join(tempDir, "s");
+		const socketPath = fakeSupervisorSocketPath(tempDir, "s");
 		let receivedCommand: Record<string, unknown> | undefined;
 		let releaseResponse: () => void = () => {};
 		const responseGate = new Promise<void>((resolve) => {
@@ -1638,7 +1650,7 @@ describe("daemon mode helpers", () => {
 
 	it("does not retry permanent ambiguity errors from the supervisor", async () => {
 		const tempDir = mkdtempSync(join(tmpdir(), "pa-ambiguous-"));
-		const socketPath = join(tempDir, "s");
+		const socketPath = fakeSupervisorSocketPath(tempDir, "s");
 		let requestCount = 0;
 		const server = createServer((socket) => {
 			socket.write(

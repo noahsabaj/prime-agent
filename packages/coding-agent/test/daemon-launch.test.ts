@@ -45,7 +45,7 @@ function send(socket: Socket, message: unknown): void {
  * the real daemon does the same (see defaultDaemonSocketPath).
  */
 function fakeDaemonSocketPath(dir: string): string {
-	return process.platform === "win32" ? `\\.pipepi-fake-daemon-${basename(dir)}` : join(dir, "d.sock");
+	return process.platform === "win32" ? `\\\\.\\pipe\\pi-fake-daemon-${basename(dir)}` : join(dir, "d.sock");
 }
 
 async function startFakeDaemon(options: FakeDaemonOptions = {}): Promise<FakeDaemon> {
