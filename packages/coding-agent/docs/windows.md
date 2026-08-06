@@ -92,3 +92,13 @@ Two Windows differences are worth knowing:
   cold worker needs roughly nine seconds to reach `listen()` on Windows, so a
   one-shot `--print` against a fresh daemon can take the better part of a
   minute. Reattaching to a running daemon skips most of that.
+- Killing a frontend outright does not close its owned worker's sessions
+  cleanly. The worker still dies with the frontend — that guarantee holds — but
+  Windows tears it down before any JavaScript runs, so no shutdown listener
+  fires: a child in that shape sees no `disconnect`, no `uncaughtException`, and
+  not even its own `exit` handler. A frontend that exits normally still unwinds
+  gracefully through stdin EOF.
+- Kernel-backed tests can time out under the full suite's parallelism. Each one
+  starts a real IPython kernel, and Windows process startup is slow enough that
+  several at once can exceed a 30s test timeout. They pass run individually; if
+  you see them fail together, re-run the file on its own before believing it.
