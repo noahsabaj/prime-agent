@@ -5,6 +5,17 @@ import {
 	DAEMON_PROTOCOL_VERSION,
 	DAEMON_SCHEMA_REVISION,
 } from "../src/modes/daemon/daemon-protocol.js";
+import { normalizeDaemonSocketPath } from "../src/modes/daemon/daemon-socket.js";
+
+/**
+ * The endpoint the client reports having dialed, which is not always the one it
+ * was handed: Windows cannot listen on a filesystem path, so the client maps it
+ * to a named pipe. Compute the expectation the same way rather than hardcoding
+ * the POSIX spelling.
+ */
+function expectedSocketText(socketPath: string): string {
+	return `Socket: ${normalizeDaemonSocketPath(socketPath)}.`;
+}
 
 const netMock = vi.hoisted(() => {
 	type Listener = (...args: unknown[]) => void;
@@ -133,7 +144,7 @@ describe("DaemonClient", () => {
 
 		const firstError = await firstAttempt;
 		expect(firstError.message).toContain("Failed to connect to the Prime Agent daemon: initial connect failed.");
-		expect(firstError.message).toContain("Socket: /tmp/prime-agent-missing.sock.");
+		expect(firstError.message).toContain(expectedSocketText("/tmp/prime-agent-missing.sock"));
 		expect(firstError.message).toContain("Daemon log:");
 		expect(firstSocket.listenerCount("data")).toBe(0);
 		expect(firstSocket.listenerCount("end")).toBe(0);
@@ -410,7 +421,7 @@ describe("DaemonClient", () => {
 			),
 		});
 		await expect(request).rejects.toMatchObject({
-			message: expect.stringContaining("Socket: /tmp/prime-agent.sock."),
+			message: expect.stringContaining(expectedSocketText("/tmp/prime-agent.sock")),
 		});
 		await expect(request).rejects.toMatchObject({
 			message: expect.stringContaining("Daemon log:"),
@@ -649,7 +660,7 @@ describe("DaemonClient", () => {
 
 		expect(closed).toHaveLength(1);
 		expect(closed[0]?.message).toContain("Connection to the Prime Agent daemon closed.");
-		expect(closed[0]?.message).toContain("Socket: /tmp/prime-agent.sock.");
+		expect(closed[0]?.message).toContain(expectedSocketText("/tmp/prime-agent.sock"));
 		expect(closed[0]?.message).toContain("Daemon log:");
 		expect(client.isConnected).toBe(false);
 		unsubscribe();

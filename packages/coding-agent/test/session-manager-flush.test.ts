@@ -47,7 +47,7 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 import { SessionManager } from "../src/core/session-manager.js";
-import { SYMLINKS_SUPPORTED } from "./utilities.js";
+import { expectFileMode, SYMLINKS_SUPPORTED } from "./utilities.js";
 
 const tempDirs: string[] = [];
 
@@ -201,7 +201,7 @@ describe("SessionManager.flushNow", () => {
 		expect(mgr.getSessionFile()).toBe(alias);
 		expect(lstatSync(alias).isSymbolicLink()).toBe(true);
 		expect(JSON.parse(readFileSync(target, "utf8")).version).toBe(3);
-		expect(statSync(target).mode & 0o777).toBe(0o640);
+		expectFileMode(target, 0o640);
 	});
 
 	it("is a no-op for in-memory (non-persisted) sessions", () => {
