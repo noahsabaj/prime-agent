@@ -30,7 +30,9 @@ function executeWithConfiguredShell(command: string): { executed: boolean; value
 			timeout: 10000,
 			stdio: ["ignore", "pipe", "ignore"],
 			shell: false,
-			windowsHide: true,
+			// No `windowsHide`: it sets CREATE_NO_WINDOW, which allocates a console
+			// for the child rather than suppressing one. Omitting it means none is
+			// created, and stdout is piped here regardless.
 		});
 
 		if (result.error) {
