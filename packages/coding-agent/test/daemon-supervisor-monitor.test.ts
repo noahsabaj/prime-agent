@@ -2152,10 +2152,18 @@ describe("daemon worker supervisor monitoring", () => {
 		try {
 			await supervisor.start();
 			await client.connect();
+			// Hold the drain open for the duration of the admission being tested.
+			// Otherwise the window is only as long as the drain incidentally takes:
+			// with no resident workers it can close before the next request is even
+			// read, and then the abort meant to land during the drain lands after
+			// fencing instead. That is a race everywhere; it just loses on Windows.
+			const mutationDrain = Reflect.get(supervisor, "mutationDrain") as MutationDrainLatch;
+			mutationDrain.begin();
 			const prepare = client.request({ type: "prepare_update_restart" });
 			expect(await client.request({ type: "abort", activeSessionId: "missing" })).not.toMatchObject({
 				error: "Daemon is preparing an update restart",
 			});
+			mutationDrain.end();
 			await prepare;
 			await expect(client.request({ type: "abort", activeSessionId: "missing" })).resolves.toMatchObject({
 				error: "Daemon is preparing an update restart",

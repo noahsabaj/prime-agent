@@ -316,11 +316,28 @@ describe("owned session worker processes", () => {
 		await waitForExit(frontend);
 		children.delete(frontend);
 		frontendPids.delete(frontendPid);
-		const terminationDeadline = Date.now() + 5000;
-		while (!existsSync(`${pidPath}.terminated`) && Date.now() < terminationDeadline) {
-			await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+
+		// The guarantee is that the worker never outlives its frontend. How that is
+		// reached differs by platform, and only unix reaches it gracefully.
+		//
+		// On unix the IPC channel closing raises `disconnect`, the owner watch turns
+		// that into a SIGTERM, and the worker runs its shutdown listeners — which is
+		// what writes this marker.
+		//
+		// Windows gives the worker no such opportunity. When the frontend is killed
+		// outright the runtime tears the worker down with it before any JavaScript
+		// runs: measured on Node 24, a child in this shape sees no `disconnect`, no
+		// `uncaughtException`, and not even its own `exit` handler. So assert the
+		// guarantee itself there rather than a marker that cannot be written. A
+		// frontend that exits normally still closes the worker gracefully through
+		// the stdin-EOF path the other tests in this file cover.
+		if (process.platform !== "win32") {
+			const terminationDeadline = Date.now() + 5000;
+			while (!existsSync(`${pidPath}.terminated`) && Date.now() < terminationDeadline) {
+				await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+			}
+			expect(existsSync(`${pidPath}.terminated`)).toBe(true);
 		}
-		expect(existsSync(`${pidPath}.terminated`)).toBe(true);
 		await waitForProcessGone(workerPid);
 	});
 });

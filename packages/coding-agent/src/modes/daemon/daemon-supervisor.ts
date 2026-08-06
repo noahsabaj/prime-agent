@@ -411,6 +411,7 @@ function createWorkerStartupGate(descriptorDir: string, workerId: string): Worke
 		};
 	}
 	const gatePath = join(descriptorDir, `${workerId}.gate`);
+	let gatedChild: ChildProcess | undefined;
 	const writeMarker = (marker: string): void => {
 		const tempPath = `${gatePath}.${process.pid}.${randomUUID()}.tmp`;
 		writeFileSync(tempPath, marker, { mode: 0o600 });
@@ -419,8 +420,20 @@ function createWorkerStartupGate(descriptorDir: string, workerId: string): Worke
 	return {
 		env: { [DAEMON_WORKER_STARTUP_GATE_PATH_ENV]: gatePath },
 		stdioSlot: undefined,
-		attach: () => {},
-		commit: async () => writeMarker(DAEMON_WORKER_STARTUP_GATE_COMMIT),
+		attach: (child) => {
+			gatedChild = child;
+		},
+		commit: async () => {
+			// The pipe gate fails the commit outright when the worker has closed its
+			// end, which is what stops the caller from going on to connect to a
+			// worker that will never answer. Writing a file always succeeds, so the
+			// equivalent signal has to be read from the process itself: a worker that
+			// has already exited is a worker that closed its gate.
+			if (gatedChild && (gatedChild.exitCode !== null || gatedChild.signalCode !== null)) {
+				throw new Error("Daemon session worker closed its startup gate before commit");
+			}
+			writeMarker(DAEMON_WORKER_STARTUP_GATE_COMMIT);
+		},
 		cancel: () => {
 			try {
 				writeMarker(DAEMON_WORKER_STARTUP_GATE_CANCEL);
