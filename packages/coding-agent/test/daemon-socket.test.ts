@@ -37,6 +37,42 @@ describe("defaultDaemonSocketPath", () => {
 		expect(basename(socketPath)).toBe("daemon.sock");
 	});
 
+	it("keeps socket paths within sun_path when the temporary directory is long", () => {
+		if (process.platform === "win32") {
+			return;
+		}
+
+		// sockaddr_un.sun_path is 104 bytes on macOS and the BSDs. A stock macOS
+		// $TMPDIR already spends 49 of them, so a deeper one — a sandbox, a test
+		// harness, a five-digit uid — overruns the field. Truncation is silent:
+		// the server binds one name and clients dial another.
+		const limit = process.platform === "linux" ? 108 : 104;
+		const longestName = "worker-000000000000-000000000000.sock";
+		const originalTmpdir = process.env.TMPDIR;
+		const base = tmpdir();
+
+		try {
+			process.env.TMPDIR = join(base, "d".repeat(120));
+			const socketPath = defaultDaemonSocketPath();
+			const workerPath = join(dirname(socketPath), longestName);
+
+			expect(Buffer.byteLength(workerPath)).toBeLessThan(limit);
+			// Every process must derive the same directory or they lose each other.
+			expect(defaultDaemonSocketPath()).toBe(socketPath);
+
+			// Distinct temporary directories must stay distinct, so an isolated
+			// TMPDIR keeps isolating.
+			process.env.TMPDIR = join(base, "e".repeat(120));
+			expect(defaultDaemonSocketPath()).not.toBe(socketPath);
+		} finally {
+			if (originalTmpdir === undefined) {
+				delete process.env.TMPDIR;
+			} else {
+				process.env.TMPDIR = originalTmpdir;
+			}
+		}
+	});
+
 	it("checks a live daemon before acquiring the socket path lock", async () => {
 		if (process.platform === "win32") {
 			return;

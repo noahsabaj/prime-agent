@@ -310,9 +310,43 @@ function assertSocketLease(socketPath: string, lease: DaemonSocketPathLease): vo
 	}
 }
 
+/**
+ * Longest path a unix domain socket can be bound to.
+ *
+ * The kernel copies the name into `sockaddr_un.sun_path`, a fixed 104-byte
+ * field on macOS and the BSDs and 108 on Linux, including the terminator.
+ * Overrunning it does not report itself as "name too long": the name is
+ * truncated, so the server binds one path while clients dial another and the
+ * failure surfaces later as ENOTSOCK or ECONNREFUSED.
+ */
+const UNIX_SOCKET_PATH_MAX = process.platform === "linux" ? 108 : 104;
+
+/** `worker-<12 hex>-<12 hex>.sock`, the longest name placed in the socket dir. */
+const LONGEST_DAEMON_SOCKET_NAME = "worker-000000000000-000000000000.sock";
+
+function fitsUnixSocketPath(socketPath: string): boolean {
+	return Buffer.byteLength(socketPath) < UNIX_SOCKET_PATH_MAX;
+}
+
+/**
+ * Per-user directory holding this user's daemon and worker sockets.
+ *
+ * The preferred location is under the temporary directory, but macOS spends 49
+ * bytes of the 104-byte budget on `$TMPDIR` alone, leaving a stock machine two
+ * bytes of headroom — a five-digit uid, or a `TMPDIR` a test or sandbox
+ * redirects somewhere deeper, overruns it. When the longest socket name would
+ * not fit, fall back to a short directory whose name is derived from the
+ * preferred one, so every process computing this agrees on the result and
+ * separate `TMPDIR`s stay separate. Paths that already fit are untouched.
+ */
 export function defaultDaemonSocketDir(): string {
 	const suffix = typeof process.getuid === "function" ? String(process.getuid()) : "user";
-	return join(tmpdir(), `prime-agent-${suffix}`);
+	const preferred = join(tmpdir(), `prime-agent-${suffix}`);
+	if (process.platform === "win32" || fitsUnixSocketPath(join(preferred, LONGEST_DAEMON_SOCKET_NAME))) {
+		return preferred;
+	}
+	const key = createHash("sha256").update(preferred).digest("hex").slice(0, 8);
+	return join("/tmp", `prime-agent-${suffix}-${key}`);
 }
 
 function ensureDefaultDaemonSocketDir(socketPath: string): void {
