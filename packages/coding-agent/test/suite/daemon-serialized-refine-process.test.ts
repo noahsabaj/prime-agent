@@ -205,11 +205,19 @@ describe("Real-process serializedRefine — JSON mode", () => {
 
 		// Clean exit — the production env scrub allowed the supervisor
 		// to start correctly despite the inherited worker role env var.
-		expect(result).toMatchObject({ code: 0, signal: null });
+		expect(result, `stderr:\n${result.stderr}\nstdout:\n${result.stdout}`).toMatchObject({
+			code: 0,
+			signal: null,
+		});
 		expect(result.stderr).not.toContain("Timed out waiting for daemon");
 
-		// Daemon socket exists — the daemon path was used.
-		expect(existsSync(socketPath)).toBe(true);
+		// Daemon socket exists — the daemon path was used. Windows serves daemons
+		// on named pipes, which leave nothing on the filesystem at the requested
+		// path, so there is no artifact to stat; the clean exit above and the
+		// worker's own event log below already establish the same thing there.
+		if (process.platform !== "win32") {
+			expect(existsSync(socketPath)).toBe(true);
+		}
 
 		// Read the event log recorded by the extension in the real worker.
 		const events = readEventLog(eventLogPath);

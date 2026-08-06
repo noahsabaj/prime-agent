@@ -1,11 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { getVenvPythonPath } from "../src/core/kernel/bootstrap.js";
 import { KernelManager } from "../src/core/kernel/index.js";
 import { buildRlmBootstrapCode } from "../src/core/tools/ipython.js";
+import { removeTempDir } from "./utilities.js";
 
 describe("IPython RLM bootstrap", () => {
 	it("pre-imports asyncio so the prompt's subagent patterns work without a manual import", () => {
@@ -62,7 +63,9 @@ describeIfKernel("IPython RLM bootstrap (real kernel)", () => {
 	const dir = mkdtempSync(join(tmpdir(), "prime-agent-bootstrap-"));
 
 	afterAll(() => {
-		rmSync(dir, { recursive: true, force: true });
+		// The kernel's own process can outlive dispose, and Windows refuses to
+		// unlink a directory another handle still holds.
+		removeTempDir(dir);
 	});
 
 	it("binds asyncio in the user namespace", async () => {
@@ -125,8 +128,12 @@ describeIfKernel("IPython RLM bootstrap (real kernel)", () => {
 				'os.chdir("../second")\nawait edit(path="same.txt", old_str="old", new_str="new")',
 			);
 
-			expect(first.diffs?.[0]?.path).toBe(realpathSync(join(firstDir, "same.txt")));
-			expect(second.diffs?.[0]?.path).toBe(realpathSync(join(secondDir, "same.txt")));
+			// Match how the edit path is canonicalized in file-mutation-queue: the
+			// native realpath. Only that one expands an 8.3 short name, so on a
+			// Windows box whose TEMP is short -- the CI runner's is -- the JS
+			// realpath disagrees with what the tool actually reports.
+			expect(first.diffs?.[0]?.path).toBe(realpathSync.native(join(firstDir, "same.txt")));
+			expect(second.diffs?.[0]?.path).toBe(realpathSync.native(join(secondDir, "same.txt")));
 			expect(first.diffs?.[0]?.path).not.toBe(second.diffs?.[0]?.path);
 		} finally {
 			await manager.dispose();
