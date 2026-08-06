@@ -2908,16 +2908,8 @@ export class DaemonSupervisor {
 					if (!isOrphanProcessIdentityCurrent(orphan)) {
 						continue;
 					}
-					const { pid } = orphan;
-					try {
-						process.kill(-pid, "SIGKILL");
-					} catch {
-						try {
-							process.kill(pid, "SIGKILL");
-						} catch {
-							// The detached resource may already have exited.
-						}
-					}
+					// Tree kill: a detached resource can itself have children.
+					signalProcessGroupOrProcess(orphan.pid, "SIGKILL");
 				}
 				clearOrphanProcessJournal(orphanProcessJournalPath);
 			} catch (error) {

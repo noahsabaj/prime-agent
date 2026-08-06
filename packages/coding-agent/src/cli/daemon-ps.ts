@@ -18,6 +18,7 @@ import {
 	windowsPipePrefix,
 } from "../modes/daemon/daemon-socket.js";
 import { acquireDaemonShutdownAdmission } from "../modes/daemon/daemon-supervisor-ownership.js";
+import { DaemonWorkerClient } from "../modes/daemon/daemon-worker-client.js";
 import type { DaemonWorkerDescriptor } from "../modes/daemon/daemon-worker-protocol.js";
 import { signalProcessGroupOrProcess } from "../utils/child-process.js";
 import { formatDaemonListTable } from "./daemon-ps-format.js";
@@ -294,6 +295,8 @@ interface ProbeResult {
 	sessionCount?: number;
 	supervisorPid?: number;
 	supervisorProcessStartId?: string;
+	daemonPid?: number;
+	daemonProcessStartId?: string;
 	reachable: boolean;
 }
 
@@ -312,6 +315,8 @@ async function probeDaemon(socketPath: string): Promise<ProbeResult> {
 		let runtime: DaemonRuntimeIdentity | undefined;
 		let supervisorPid: number | undefined;
 		let supervisorProcessStartId: string | undefined;
+		let daemonPid: number | undefined;
+		let daemonProcessStartId: string | undefined;
 		let greeted = false;
 		try {
 			const hello = await client.waitForHello(1500);
@@ -321,6 +326,8 @@ async function probeDaemon(socketPath: string): Promise<ProbeResult> {
 			runtime = hello.runtime;
 			supervisorPid = hello.supervisorPid;
 			supervisorProcessStartId = hello.supervisorProcessStartId;
+			daemonPid = hello.daemonPid;
+			daemonProcessStartId = hello.daemonProcessStartId;
 			greeted = true;
 		} catch {
 			// Connected but no recognizable greeting: an old/foreign daemon.
@@ -345,6 +352,8 @@ async function probeDaemon(socketPath: string): Promise<ProbeResult> {
 			sessionCount,
 			supervisorPid,
 			supervisorProcessStartId,
+			daemonPid,
+			daemonProcessStartId,
 			reachable: true,
 		};
 	} finally {
@@ -616,6 +625,23 @@ async function runShutdownAllConverging(
 	if (force) {
 		await stopHiddenSupervisors(stopped, failed, handledPids, reportedFailures, assertAdmission);
 	}
+
+	await shutdownAllOnce(force, assertAdmission, stopped, failed, handledPids);
+
+	if (force) {
+		await terminateVerifiedResiduals(stopped, failed, handledPids, reportedFailures, assertAdmission);
+	}
+
+	reportShutdownAll(json, stopped, failed);
+}
+
+async function shutdownAllOnce(
+	force: boolean,
+	assertAdmission: () => Promise<void>,
+	stopped: Array<{ socketPath: string; action: string }>,
+	failed: Array<{ socketPath: string; reason: string }>,
+	handledPids: Set<number>,
+): Promise<void> {
 	const daemons = (await discoverDaemons()).filter((daemon) => !isWorkerSocketPath(daemon.socketPath));
 
 	const actions = [...planShutdownAll(daemons, force)].sort(
@@ -698,10 +724,18 @@ async function runShutdownAllConverging(
 		}
 	}
 
-	if (force) {
-		await terminateVerifiedResiduals(stopped, failed, handledPids, reportedFailures, assertAdmission);
-	}
+	// After the supervisors are down, any worker still serving its pipe belongs to
+	// nobody. Left alone it relaunches a replacement supervisor as soon as it
+	// notices, so skipping this makes shutdown non-convergent: it rebuilds exactly
+	// what was just stopped.
+	await stopOrphanedWorkers(stopped, failed, handledPids);
+}
 
+function reportShutdownAll(
+	json: boolean,
+	stopped: Array<{ socketPath: string; action: string }>,
+	failed: Array<{ socketPath: string; reason: string }>,
+): void {
 	if (json) {
 		if (failed.length > 0) {
 			process.exitCode = 1;
@@ -721,6 +755,76 @@ async function runShutdownAllConverging(
 	}
 	if (failed.length > 0) {
 		process.exitCode = 1;
+	}
+}
+
+/**
+ * Stop session workers that outlived the supervisor that owned them.
+ *
+ * Discovery hides worker sockets on purpose — a worker is an implementation
+ * detail of its supervisor, not a background service a user manages. But a
+ * supervisor only stops the workers it still holds in memory, so a worker whose
+ * owner died (crash, force-kill, or a shutdown that raced it) answers to nobody
+ * and no longer appears anywhere. Sweeping them here is what makes "stop
+ * everything" true.
+ */
+/**
+ * Read a session worker's greeting.
+ *
+ * Workers speak the binary framed transport rather than JSONL, so the ordinary
+ * daemon client connects but never sees a greeting — which is why a worker
+ * looks reachable yet anonymous. Only the worker client can decode it.
+ */
+async function probeWorker(socketPath: string): Promise<{ pid?: number; startId?: string } | undefined> {
+	const client = new DaemonWorkerClient(socketPath);
+	try {
+		await client.connect(500);
+		const hello = await client.waitForHello(1500);
+		return { pid: hello.daemonPid, startId: hello.daemonProcessStartId };
+	} catch {
+		return undefined;
+	} finally {
+		client.close();
+	}
+}
+
+async function stopOrphanedWorkers(
+	stopped: Array<{ socketPath: string; action: string }>,
+	failed: Array<{ socketPath: string; reason: string }>,
+	handledPids: Set<number>,
+): Promise<void> {
+	// A worker's greeting carries no pid of its own — only supervisors report one —
+	// so the pid comes from the descriptor its supervisor persisted, verified
+	// against the process's start id so a recycled pid is never signalled.
+	const workerPids = new Map<string, number>();
+	for (const { descriptor } of findAllTrackedWorkers()) {
+		if (descriptor.processStartId && getProcessStartId(descriptor.pid) !== descriptor.processStartId) {
+			continue;
+		}
+		workerPids.set(normalizeSocketPath(descriptor.socketPath), descriptor.pid);
+	}
+
+	for (const socketPath of scanSocketDir().filter((candidate) => isWorkerSocketPath(candidate))) {
+		const probe = await probeWorker(socketPath);
+		if (!probe) {
+			continue;
+		}
+		// No graceful path exists here: a worker rejects commands from a client it
+		// has not authenticated, and it does so by closing the connection — which
+		// is indistinguishable from a clean stop. Its supervisor is gone, so no
+		// client can ever authenticate. Stop the process itself.
+		const pid = verifyHelloSupervisorPid(probe.pid, probe.startId) ?? workerPids.get(normalizeSocketPath(socketPath));
+		if (pid === undefined) {
+			failed.push({ socketPath, reason: "orphaned session worker: could not identify its process" });
+			continue;
+		}
+		// No admission assertion here: that lease coordinates stopping supervisors
+		// between competing shutdowns, and renewing it once per worker is what made
+		// a large sweep outlive its own lease. The pid is already verified against
+		// the process start id, so this cannot hit an unrelated process.
+		signalProcessGroupOrProcess(pid, "SIGKILL");
+		handledPids.add(pid);
+		stopped.push({ socketPath, action: `stopped orphaned session worker (pid ${pid})` });
 	}
 }
 

@@ -846,6 +846,16 @@ export type DaemonOutbound =
 			supervisorGeneration?: string;
 			/** Diagnostic process identity for attributing supervisor replacement. */
 			supervisorPid?: number;
+			/**
+			 * Pid of the daemon sending this greeting, and its start identity.
+			 *
+			 * A session worker has no other way to name itself: it is not in the
+			 * caller's worker descriptors when the two run from different agent
+			 * directories, and it refuses commands from unauthenticated clients, so
+			 * without this an orphaned worker cannot be stopped by anything.
+			 */
+			daemonPid?: number;
+			daemonProcessStartId?: string;
 			/** Durable owner marker for validating update handoff fences. */
 			supervisorOwnerToken?: string;
 			/** Process start identity captured when the durable owner was published. */

@@ -13,6 +13,7 @@ import {
 } from "../core/orphan-process-journal.js";
 import { SESSION_LEASE_OWNER_ID_ENV, SESSION_LEASES_ENABLED_ENV } from "../core/session-lease.js";
 import { attachJsonlLineReader, serializeJsonLine } from "../modes/rpc/jsonl.js";
+import { signalProcessGroupOrProcess } from "../utils/child-process.js";
 import { isHelpCommandRequest, PUBLIC_COMMAND_NAMES, REMOVED_COMMAND_NAMES } from "./command-registry.js";
 import { type CliSubprocessLaunchSpec, createCliSubprocessLaunchSpec } from "./subprocess-launch.js";
 
@@ -289,27 +290,15 @@ export async function runOwnedSessionWorkerFrontend(
 		if (!workerPid) {
 			return;
 		}
-		if (process.platform !== "win32") {
-			try {
-				process.kill(-workerPid, "SIGKILL");
-			} catch {
-				// The worker process group may already be fully reaped.
-			}
-		}
+		// Reaches the worker's own children (kernel, tool subprocesses) on every
+		// platform; skipping this on Windows left the whole subtree running.
+		signalProcessGroupOrProcess(workerPid, "SIGKILL");
 		for (const orphan of readActiveOrphanProcesses(orphanProcessJournalPath, workerPid)) {
 			if (!isOrphanProcessIdentityCurrent(orphan)) {
 				continue;
 			}
-			const { pid } = orphan;
-			try {
-				process.kill(process.platform === "win32" ? pid : -pid, "SIGKILL");
-			} catch {
-				try {
-					process.kill(pid, "SIGKILL");
-				} catch {
-					// The detached resource may already have exited.
-				}
-			}
+			// Tree kill: a detached resource can itself have children.
+			signalProcessGroupOrProcess(orphan.pid, "SIGKILL");
 		}
 		clearOrphanProcessJournal(orphanProcessJournalPath);
 	};
@@ -507,18 +496,19 @@ export function installOwnedSessionWorkerOwnerWatch(): void {
 		ownerGone = true;
 		closeOwnerWatch = undefined;
 		const forceTimer = setTimeout(() => {
-			if (process.platform !== "win32") {
-				try {
-					process.kill(-process.pid, "SIGKILL");
-					return;
-				} catch {
-					// Fall through to terminating only this process.
-				}
-			}
+			// Take the subtree down with us rather than orphaning it.
+			signalProcessGroupOrProcess(process.pid, "SIGKILL");
 			process.exit(143);
 		}, 5000);
 		forceTimer.unref();
-		process.kill(process.pid, "SIGTERM");
+		if (process.platform === "win32") {
+			// Windows has no signal delivery: process.kill would terminate this
+			// process outright, so the shutdown listeners a SIGTERM would have run
+			// never get to close sessions. Raise it in-process instead.
+			process.emit("SIGTERM");
+		} else {
+			process.kill(process.pid, "SIGTERM");
+		}
 	};
 	process.once("disconnect", terminate);
 	process.channel.unref();

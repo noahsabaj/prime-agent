@@ -19,6 +19,7 @@ import {
 	getDaemonCommandCompatibilities,
 	isDaemonMutatingCommand,
 } from "./daemon-protocol.js";
+import { normalizeDaemonSocketPath } from "./daemon-socket.js";
 import type { DaemonWorkerCommand, DaemonWorkerCommandBody } from "./daemon-worker-protocol.js";
 
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
@@ -125,7 +126,21 @@ export class DaemonClient {
 		timeout: ReturnType<typeof setTimeout>;
 	}>();
 
-	constructor(private readonly socketPath: string) {}
+	private readonly socketPath: string;
+
+	/**
+	 * Accepts either address a daemon can be named by.
+	 *
+	 * Windows serves daemons on named pipes, so a filesystem path — what the docs,
+	 * scripts, and `--daemon-socket` all produce — is mapped to the pipe the
+	 * daemon actually listens on. Normalizing here rather than only at the CLI
+	 * boundary keeps a path a working address for every caller; otherwise a
+	 * caller holding the path it passed in cannot reach, or shut down, its own
+	 * daemon.
+	 */
+	constructor(socketPath: string) {
+		this.socketPath = normalizeDaemonSocketPath(socketPath);
+	}
 
 	get hello(): DaemonHello | undefined {
 		return this.helloMessage;

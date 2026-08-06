@@ -1,4 +1,4 @@
-import type { ChildProcess } from "node:child_process";
+import { type ChildProcess, spawnSync } from "node:child_process";
 import { constants } from "node:os";
 import { basename } from "node:path";
 
@@ -14,7 +14,21 @@ export function shouldUseWindowsShell(command: string): boolean {
 	return commandName.endsWith(".cmd") || commandName.endsWith(".bat") || WINDOWS_SHELL_COMMANDS.has(commandName);
 }
 
+/**
+ * Terminate a process and everything it spawned.
+ *
+ * Unix signals the process group, which reaches descendants in one call. Windows
+ * has no process groups to signal — `process.kill` there terminates exactly one
+ * process — so a daemon's workers, its catalog child, and their Python kernels
+ * all survive their parent and accumulate. `taskkill /T` walks the real process
+ * tree instead. It runs synchronously so teardown paths can rely on it having
+ * happened, and it is fast enough (tens of milliseconds) to sit in a shutdown.
+ */
 export function signalProcessGroupOrProcess(pid: number, signal: NodeJS.Signals): void {
+	if (process.platform === "win32") {
+		killWindowsProcessTree(pid);
+		return;
+	}
 	try {
 		process.kill(-pid, signal);
 		return;
@@ -25,6 +39,23 @@ export function signalProcessGroupOrProcess(pid: number, signal: NodeJS.Signals)
 		process.kill(pid, signal);
 	} catch {
 		// The process may already be fully reaped.
+	}
+}
+
+function killWindowsProcessTree(pid: number): void {
+	if (!Number.isInteger(pid) || pid <= 0) {
+		return;
+	}
+	try {
+		spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], { stdio: "ignore", windowsHide: true });
+	} catch {
+		// taskkill is unavailable or the tree is already gone; fall back to the
+		// single process so at least the root does not linger.
+		try {
+			process.kill(pid, "SIGKILL");
+		} catch {
+			// Already reaped.
+		}
 	}
 }
 

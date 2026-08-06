@@ -107,7 +107,12 @@ import {
 	type SessionPassivationSnapshot,
 } from "../../core/session-action-store.js";
 import { deleteSessionFile } from "../../core/session-file-actions.js";
-import { acquireSessionLease, canonicalSessionPath, type SessionLease } from "../../core/session-lease.js";
+import {
+	acquireSessionLease,
+	canonicalSessionPath,
+	getProcessStartId,
+	type SessionLease,
+} from "../../core/session-lease.js";
 import {
 	readSessionInfo,
 	resolveSessionRlmDepth,
@@ -3006,6 +3011,8 @@ export class AgentDaemon {
 			schemaRevision: DAEMON_SCHEMA_REVISION,
 			appVersion: VERSION,
 			runtime: getDaemonRuntimeIdentity(),
+			daemonPid: process.pid,
+			...(getProcessStartId(process.pid) ? { daemonProcessStartId: getProcessStartId(process.pid) } : {}),
 			clientId: client.id,
 			serverCapabilities: DAEMON_DEFAULT_SERVER_CAPABILITIES,
 		});
