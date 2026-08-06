@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -357,7 +357,7 @@ describe("AgentSession autonomous mode", () => {
 
 	it("advances retry budget without rerunning a failed autonomous gate until the workspace changes", async () => {
 		const tempDir = join(process.cwd(), `.tmp-autonomous-gate-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-		execFileSync("mkdir", ["-p", join(tempDir, "verification")]);
+		mkdirSync(join(tempDir, "verification"), { recursive: true });
 		execFileSync("git", ["init"], { cwd: tempDir, stdio: "ignore" });
 		execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: tempDir });
 		execFileSync("git", ["config", "user.name", "Test User"], { cwd: tempDir });
@@ -395,7 +395,7 @@ describe("AgentSession autonomous mode", () => {
 			process.cwd(),
 			`.tmp-autonomous-untracked-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 		);
-		execFileSync("mkdir", ["-p", tempDir]);
+		mkdirSync(tempDir, { recursive: true });
 		execFileSync("git", ["init"], { cwd: tempDir, stdio: "ignore" });
 		execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: tempDir });
 		execFileSync("git", ["config", "user.name", "Test User"], { cwd: tempDir });
@@ -449,7 +449,7 @@ describe("AgentSession autonomous mode", () => {
 			process.cwd(),
 			`.tmp-autonomous-process-tree-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 		);
-		execFileSync("mkdir", ["-p", tempDir]);
+		mkdirSync(tempDir, { recursive: true });
 		execFileSync("git", ["init"], { cwd: tempDir, stdio: "ignore" });
 		const pidFile = join(tempDir, "descendant.pid");
 		const script = join(tempDir, "gate.cjs");
@@ -540,7 +540,7 @@ describe("AgentSession autonomous mode", () => {
 			process.cwd(),
 			`.tmp-autonomous-post-snapshot-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 		);
-		execFileSync("mkdir", ["-p", tempDir]);
+		mkdirSync(tempDir, { recursive: true });
 		execFileSync("git", ["init"], { cwd: tempDir, stdio: "ignore" });
 		execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: tempDir });
 		execFileSync("git", ["config", "user.name", "Test User"], { cwd: tempDir });
