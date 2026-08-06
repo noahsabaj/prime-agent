@@ -130,6 +130,17 @@ type DaemonCommandBody = DistributiveOmit<DaemonCommand, "id">;
 
 const structuredLog = getLogger("coding-agent.daemon-supervisor");
 const WORKER_CONNECT_TIMEOUT_MS = 30_000;
+/**
+ * How long to wait for a worker to answer `worker_auth`.
+ *
+ * Answering it makes the worker validate this supervisor's claim, which takes
+ * the supervisor-ownership registry guard — a cross-process file lock whose own
+ * retry budget is several seconds. Anything shorter than that budget times out
+ * on a lock the worker is still legitimately waiting for, so the supervisor
+ * reconnects and the pair never converges. Windows hits this routinely because
+ * its file locking is slower to hand over.
+ */
+const WORKER_AUTH_TIMEOUT_MS = 15_000;
 const WORKER_REQUEST_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 const UPDATE_RESTART_MUTATION_DRAIN_TIMEOUT_MS = 80_000;
 const UPDATE_RESTART_WORKER_REQUEST_TIMEOUT_MS = 90_000;
@@ -2398,7 +2409,7 @@ export class DaemonSupervisor {
 				await client.authenticateWorker(
 					worker.descriptor.authenticationToken,
 					this.supervisorAuthenticationClaim(),
-					1000,
+					WORKER_AUTH_TIMEOUT_MS,
 				);
 				await this.assertRecoveryAllowed();
 				client.onFrame((frame) => this.handleWorkerFrame(worker, frame));
