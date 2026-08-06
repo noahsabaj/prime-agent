@@ -11,7 +11,12 @@ import {
 	DAEMON_SCHEMA_ID,
 	type DaemonRuntimeIdentity,
 } from "../modes/daemon/daemon-protocol.js";
-import { defaultDaemonSocketDir, defaultDaemonSocketPath } from "../modes/daemon/daemon-socket.js";
+import {
+	defaultDaemonSocketDir,
+	defaultDaemonSocketPath,
+	listWindowsDaemonPipes,
+	windowsPipePrefix,
+} from "../modes/daemon/daemon-socket.js";
 import { acquireDaemonShutdownAdmission } from "../modes/daemon/daemon-supervisor-ownership.js";
 import type { DaemonWorkerDescriptor } from "../modes/daemon/daemon-worker-protocol.js";
 import { signalProcessGroupOrProcess } from "../utils/child-process.js";
@@ -30,6 +35,11 @@ import { promptYesNo } from "./daemon-stop-confirm.js";
  *     prime-agent`, just parsed.
  *  2. A sweep of the default socket dir, which catches orphaned socket *files*
  *     left behind by daemons that are no longer running.
+ *
+ * Windows has neither source. Daemons listen on named pipes, so discovery
+ * enumerates the pipe namespace for this user's prefix (source 2 in spirit) and
+ * takes each pid from the probed daemon_hello rather than from the OS. A pipe
+ * only exists while its server holds it open, so there is no orphan-file case.
  *
  * Each discovered socket is then probed with the existing daemon_hello + list
  * primitives, so introspection works even against stale daemons running an
@@ -82,7 +92,9 @@ const MAX_COMM_LENGTH = 15;
 /** Normalize a socket path so process-scan and dir-sweep entries merge cleanly. */
 function normalizeSocketPath(socketPath: string): string {
 	if (process.platform === "win32") {
-		return socketPath;
+		// Pipe names are case-insensitive; lowercase so the same pipe discovered
+		// two ways merges into one entry.
+		return socketPath.toLowerCase();
 	}
 	return resolve(socketPath);
 }
@@ -202,7 +214,40 @@ function scanListeningDaemons(): DiscoveredDaemonProcess[] {
 
 function isDaemonProcessListening(pid: number, socketPath: string): boolean {
 	const target = normalizeSocketPath(socketPath);
+	if (process.platform === "win32") {
+		// The pipe namespace names listeners without naming their owner, so the
+		// pid can only be corroborated by liveness. The caller's pid came from a
+		// start-id-verified daemon_hello, so it is not a recycled-pid risk.
+		return (
+			listWindowsDaemonPipes().some((pipe) => normalizeSocketPath(pipe) === target) &&
+			getProcessStartId(pid) !== undefined
+		);
+	}
 	return scanListeningDaemons().some((daemon) => daemon.pid === pid && daemon.socketPath === target);
+}
+
+/**
+ * Live daemons with their pids, for the shutdown convergence loops.
+ *
+ * Unix reads the socket→pid map straight from the kernel. Windows has no such
+ * map for pipes, so each live pipe is probed and the pid comes from its verified
+ * `daemon_hello`. A hung Windows daemon answers nothing and is therefore absent
+ * here — it is reported as unreachable rather than silently killed.
+ */
+async function scanListeningDaemonsNow(): Promise<DiscoveredDaemonProcess[]> {
+	if (process.platform !== "win32") {
+		return scanListeningDaemons();
+	}
+	const probes = await Promise.all(
+		listWindowsDaemonPipes()
+			.map(normalizeSocketPath)
+			.map(async (socketPath): Promise<DiscoveredDaemonProcess | undefined> => {
+				const probe = await probeDaemon(socketPath);
+				const pid = verifyHelloSupervisorPid(probe.supervisorPid, probe.supervisorProcessStartId);
+				return pid === undefined ? undefined : { pid, socketPath };
+			}),
+	);
+	return probes.filter((daemon): daemon is DiscoveredDaemonProcess => daemon !== undefined);
 }
 
 function enrichUptimes(daemons: DiscoveredDaemonProcess[]): DiscoveredDaemonProcess[] {
@@ -221,7 +266,7 @@ function enrichUptimes(daemons: DiscoveredDaemonProcess[]): DiscoveredDaemonProc
 /** Socket files in the default socket dir (may be live daemons or orphaned files). */
 function scanSocketDir(): string[] {
 	if (process.platform === "win32") {
-		return [];
+		return listWindowsDaemonPipes().map(normalizeSocketPath);
 	}
 	const dir = defaultDaemonSocketDir();
 	if (!existsSync(dir)) {
@@ -354,11 +399,12 @@ export async function discoverDaemons(): Promise<DaemonInfo[]> {
 	const workerSockets = new Set(
 		findAllTrackedWorkers().map((worker) => normalizeSocketPath(worker.descriptor.supervisorSocketPath)),
 	);
-	const sockets = new Set<string>([
-		...processBySocket.keys(),
-		...scanSocketDir().filter((socketPath) => !isWorkerSocketPath(socketPath)),
-		...workerSockets,
-	]);
+	const scannedSockets = new Set(scanSocketDir().filter((socketPath) => !isWorkerSocketPath(socketPath)));
+	// On Windows a discovered pipe is proof of a live server, the same evidence
+	// `ss`/`lsof` give on unix; there is no pipe equivalent of an orphaned socket
+	// file, so scanned pipes are never "orphan-file". Unix keeps the old meaning.
+	const livePipes = process.platform === "win32" ? scannedSockets : new Set<string>();
+	const sockets = new Set<string>([...processBySocket.keys(), ...scannedSockets, ...workerSockets]);
 	const defaultSocket = normalizeSocketPath(defaultDaemonSocketPath());
 
 	const infos = await Promise.all(
@@ -369,7 +415,7 @@ export async function discoverDaemons(): Promise<DaemonInfo[]> {
 			const hasTrackedWorkers = workerSockets.has(socketPath);
 			const status: DaemonStatus = probe.reachable
 				? classifyReachable(probe)
-				: proc || hasTrackedWorkers
+				: proc || hasTrackedWorkers || livePipes.has(socketPath)
 					? "unreachable"
 					: "orphan-file";
 			return {
@@ -686,7 +732,9 @@ async function stopHiddenSupervisors(
 	assertAdmission: () => Promise<void>,
 ): Promise<void> {
 	while (true) {
-		const listeners = scanListeningDaemons().filter((listener) => !isWorkerSocketPath(listener.socketPath));
+		const listeners = (await scanListeningDaemonsNow()).filter(
+			(listener) => !isWorkerSocketPath(listener.socketPath),
+		);
 		const bySocket = new Map<string, DiscoveredDaemonProcess[]>();
 		for (const listener of listeners) {
 			const group = bySocket.get(listener.socketPath) ?? [];
@@ -720,7 +768,7 @@ async function stopHiddenSupervisors(
 				stopped.push({ socketPath: listener.socketPath, action: `stopped hidden daemon (pid ${listener.pid})` });
 			}
 		}
-		const afterHidden = scanListeningDaemons().filter(
+		const afterHidden = (await scanListeningDaemonsNow()).filter(
 			(listener) =>
 				!isWorkerSocketPath(listener.socketPath) &&
 				hidden.some((candidate) => candidate.pid === listener.pid && candidate.socketPath === listener.socketPath),
@@ -743,7 +791,7 @@ async function terminateVerifiedResiduals(
 	const deadline = Date.now() + SHUTDOWN_CONVERGENCE_TIMEOUT_MS;
 	while (true) {
 		await assertAdmission();
-		const listeners = scanListeningDaemons();
+		const listeners = await scanListeningDaemonsNow();
 		const now = Date.now();
 		if (listeners.length === 0) {
 			previousSignature = undefined;
@@ -881,8 +929,10 @@ function recordShutdownFailure(
 }
 
 export function isWorkerSocketPath(socketPath: string): boolean {
+	if (process.platform === "win32") {
+		return basename(socketPath).toLowerCase().startsWith(`${windowsPipePrefix()}worker-`);
+	}
 	return (
-		process.platform !== "win32" &&
 		resolve(dirname(socketPath)) === resolve(defaultDaemonSocketDir()) &&
 		basename(socketPath).startsWith("worker-") &&
 		basename(socketPath).endsWith(".sock")

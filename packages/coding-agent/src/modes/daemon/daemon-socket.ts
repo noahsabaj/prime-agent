@@ -1,6 +1,7 @@
-import { chmodSync, existsSync, lstatSync, mkdirSync, unlinkSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { createConnection } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
 
@@ -33,11 +34,71 @@ export interface DaemonSocketIdentity {
 	ino: number;
 }
 
+/** Windows named-pipe namespace. Every pipe lives directly under this prefix. */
+export const WINDOWS_PIPE_DIR = "\\\\.\\pipe\\";
+/**
+ * The same namespace, spelled for `readdirSync`. libuv normalizes the
+ * backslash form down to a relative path (`\\.\pipe\` becomes `<cwd-drive>:\.pipe\`)
+ * and the listing fails with ENOENT; the forward-slash form survives.
+ */
+const WINDOWS_PIPE_DIR_FOR_READDIR = "//./pipe/";
+
+let cachedWindowsPipePrefix: string | undefined;
+
+/**
+ * Pipe-name prefix scoping every prime-agent pipe to one user.
+ *
+ * The Windows pipe namespace is machine-global, so a fixed name collides between
+ * concurrent users and lets one user's client reach another user's daemon. The
+ * home directory is hashed in because usernames are not unique across domains
+ * and are not all pipe-name-safe.
+ */
+export function windowsPipePrefix(): string {
+	if (cachedWindowsPipePrefix) {
+		return cachedWindowsPipePrefix;
+	}
+	let username = "user";
+	try {
+		username = userInfo().username || username;
+	} catch {
+		// userInfo throws when the account has no passwd entry; the hash still scopes the name.
+	}
+	const safeUsername =
+		username
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "") || "user";
+	const identity = createHash("sha256").update(`${username}\0${homedir()}`).digest("hex").slice(0, 8);
+	cachedWindowsPipePrefix = `prime-agent-${safeUsername}-${identity}-`;
+	return cachedWindowsPipePrefix;
+}
+
 export function defaultDaemonSocketPath(): string {
 	if (process.platform === "win32") {
-		return "\\\\.\\pipe\\prime-agent-daemon";
+		return `${WINDOWS_PIPE_DIR}${windowsPipePrefix()}daemon`;
 	}
 	return join(defaultDaemonSocketDir(), "daemon.sock");
+}
+
+/**
+ * Every prime-agent pipe currently being served for this user.
+ *
+ * A named pipe exists only while its server holds it open, so unlike the unix
+ * socket dir this never reports orphans — each entry is a live listener.
+ */
+export function listWindowsDaemonPipes(): string[] {
+	if (process.platform !== "win32") {
+		return [];
+	}
+	const prefix = windowsPipePrefix();
+	try {
+		return readdirSync(WINDOWS_PIPE_DIR_FOR_READDIR)
+			.filter((name) => name.toLowerCase().startsWith(prefix))
+			.map((name) => `${WINDOWS_PIPE_DIR}${name}`);
+	} catch {
+		// The pipe namespace is unreadable on some locked-down configurations.
+		return [];
+	}
 }
 
 export async function acquireDaemonSocketPathLease(socketPath: string): Promise<DaemonSocketPathLease | undefined> {

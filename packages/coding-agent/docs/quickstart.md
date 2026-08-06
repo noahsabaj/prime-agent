@@ -16,7 +16,17 @@ To try the latest beta built from `main`:
 curl -fsSL https://app.primeintellect.ai/prime-agent/install.sh | sh -s -- beta
 ```
 
-Both commands fetch versioned Prime Agent release artifacts and install the `prime-agent` command. The inherited npm workspace identifiers in the source tree are not the public install path.
+On Windows, run the PowerShell installer instead:
+
+```powershell
+irm https://app.primeintellect.ai/prime-agent/install.ps1 | iex
+```
+
+```powershell
+irm https://app.primeintellect.ai/prime-agent/install-beta.ps1 | iex
+```
+
+All of these commands fetch versioned Prime Agent release artifacts and install the `prime-agent` command. The inherited npm workspace identifiers in the source tree are not the public install path.
 
 Then start Prime Agent in the project directory you want it to work on:
 
@@ -33,6 +43,8 @@ cd prime-agent
 npm ci
 ./prime-agent.sh
 ```
+
+On Windows the source runner is `.\prime-agent.ps1` (or `prime-agent.cmd` for `cmd.exe`).
 
 The source runner preserves the directory from which it is invoked, so you can also call `/path/to/prime-agent/prime-agent.sh` from another project.
 

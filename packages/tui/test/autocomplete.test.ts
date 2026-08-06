@@ -18,6 +18,28 @@ const resolveFdPath = (): string | null => {
 	return firstLine ? firstLine.trim() : null;
 };
 
+/**
+ * Creating a symlink on Windows needs SeCreateSymbolicLinkPrivilege, which only
+ * Developer Mode or an elevated shell grants. Probe once so the symlink cases
+ * skip instead of failing on an ordinary Windows account.
+ */
+const symlinksAreSupported = ((): boolean => {
+	const probeDir = mkdtempSync(join(tmpdir(), "pi-symlink-probe-"));
+	try {
+		writeFileSync(join(probeDir, "target.txt"), "probe");
+		symlinkSync("target.txt", join(probeDir, "link.txt"));
+		return true;
+	} catch {
+		return false;
+	} finally {
+		rmSync(probeDir, { recursive: true, force: true });
+	}
+})();
+
+const skipWithoutSymlinks = symlinksAreSupported
+	? undefined
+	: "symlink creation is not permitted (enable Developer Mode on Windows)";
+
 type FolderStructure = {
 	dirs?: string[];
 	files?: Record<string, string>;
@@ -456,7 +478,7 @@ describe("CombinedAutocompleteProvider", () => {
 			assert.ok(!values.some((value) => value === "@.git" || value.startsWith("@.git/")));
 		});
 
-		test("follows symlinked directories for fuzzy @ search", async () => {
+		test("follows symlinked directories for fuzzy @ search", { skip: skipWithoutSymlinks }, async () => {
 			setupFolder(baseDir, {
 				files: {
 					"dir/some_file.txt": "real",
@@ -478,7 +500,7 @@ describe("CombinedAutocompleteProvider", () => {
 			assert.ok(values.includes("@symlinked_dir/some_file.txt"));
 		});
 
-		test("returns symlinked directories when matching their name", async () => {
+		test("returns symlinked directories when matching their name", { skip: skipWithoutSymlinks }, async () => {
 			setupFolder(outsideDir, {
 				files: {
 					"nested/file.txt": "symlinked",
@@ -494,7 +516,7 @@ describe("CombinedAutocompleteProvider", () => {
 			assert.ok(values.includes("@symlinked_dir/"));
 		});
 
-		test("returns symlinked files without requiring type l", async () => {
+		test("returns symlinked files without requiring type l", { skip: skipWithoutSymlinks }, async () => {
 			setupFolder(baseDir, {
 				files: {
 					"original.txt": "content",
