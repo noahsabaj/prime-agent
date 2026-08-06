@@ -652,6 +652,9 @@ export class KernelManager {
 				cwd: this.options.cwd,
 				env: this.options.env ? { ...process.env, ...this.options.env } : process.env,
 				stdio: ["ignore", "pipe", "pipe"],
+				// Every daemon worker starts a kernel, and every worker is console-less,
+				// so without this each session opens a visible console window.
+				windowsHide: true,
 			});
 			this.kernel = kernel;
 

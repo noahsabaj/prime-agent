@@ -396,6 +396,10 @@ function run(command: string, args: string[], options: { stdio?: "ignore" | "inh
 		const child = spawn(command, args, {
 			env: process.env,
 			stdio: options.stdio ?? "ignore",
+			// uv and python are console programs. Started from a daemon or worker,
+			// which is detached and so has no console of its own, Windows gives each
+			// one a visible console window that outlives it. No-op off Windows.
+			windowsHide: true,
 		});
 		child.on("error", reject);
 		child.on("exit", (code, signal) => {

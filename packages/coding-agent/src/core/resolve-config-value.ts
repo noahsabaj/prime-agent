@@ -30,9 +30,10 @@ function executeWithConfiguredShell(command: string): { executed: boolean; value
 			timeout: 10000,
 			stdio: ["ignore", "pipe", "ignore"],
 			shell: false,
-			// No `windowsHide`: it sets CREATE_NO_WINDOW, which allocates a console
-			// for the child rather than suppressing one. Omitting it means none is
-			// created, and stdout is piped here regardless.
+			// A daemon owns no console, having been spawned detached, and Windows
+			// gives a console child of such a parent a visible console window that
+			// outlives it. Resolving a config value must not litter the desktop.
+			windowsHide: true,
 		});
 
 		if (result.error) {
@@ -60,6 +61,7 @@ function executeWithDefaultShell(command: string): string | undefined {
 			encoding: "utf-8",
 			timeout: 10000,
 			stdio: ["ignore", "pipe", "ignore"],
+			windowsHide: true,
 		});
 		return output.trim() || undefined;
 	} catch {

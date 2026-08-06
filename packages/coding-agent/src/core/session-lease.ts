@@ -133,6 +133,13 @@ function runProcessQuery(command: string, args: string[]): string {
 	return execFileSync(command, args, {
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "ignore"],
+		// Required on Windows, not cosmetic. A daemon is spawned detached and so
+		// owns no console, and when a process without one starts a console program
+		// Windows gives the child a brand new console *with a visible window* —
+		// which then outlives the child as an orphaned console host the user has to
+		// close by hand. This query runs on hot paths, so that is a window each
+		// time. No-op off Windows.
+		windowsHide: true,
 	});
 }
 

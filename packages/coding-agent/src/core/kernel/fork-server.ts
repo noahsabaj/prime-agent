@@ -175,6 +175,9 @@ class ForkServer {
 				const proc = spawn(this.params.python, ["-c", FORK_SERVER_SCRIPT, socketPath], {
 					env: this.launchEnv,
 					stdio: ["ignore", "ignore", "pipe"],
+					// As with the kernel: console-less parent, so a visible console
+					// window per Python process without this. No-op off Windows.
+					windowsHide: true,
 				});
 				this.proc = proc;
 				proc.stderr?.on("data", (buf: Buffer) => {

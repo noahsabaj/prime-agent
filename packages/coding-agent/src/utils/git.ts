@@ -253,6 +253,9 @@ function runGit(cwd: string, args: string[]): string | null {
 		cwd,
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "ignore"],
+		// git is called constantly. From a console-less parent each call would flash
+		// up a console window and leave it behind. No-op off Windows.
+		windowsHide: true,
 	});
 	if (result.status !== 0 || typeof result.stdout !== "string") return null;
 	return result.stdout.trim() || null;

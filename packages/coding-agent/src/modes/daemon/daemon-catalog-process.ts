@@ -396,6 +396,9 @@ export class DaemonCatalogClient {
 			cwd: process.cwd(),
 			env: createCliSubprocessEnv({ ...process.env, [DAEMON_CATALOG_ROLE_ENV]: "1" }),
 			stdio: ["ignore", "ignore", "ignore", "ipc"],
+			// The supervisor starting this owns no console, so without the flag the
+			// catalog child opens a visible console window that outlives it.
+			windowsHide: true,
 		});
 		this.child = child;
 		child.on("message", (value: unknown) => this.handleMessage(value));

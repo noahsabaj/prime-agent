@@ -227,6 +227,9 @@ function readCommandOutput(
 		encoding: "utf-8",
 		stdio: ["ignore", "pipe", "pipe"],
 		shell: shouldUseWindowsShell(command),
+		// Output is captured, never shown, so suppress the console window Windows
+		// would otherwise create for a console-less parent. No-op elsewhere.
+		windowsHide: true,
 	});
 	if (result.status === 0) return result.stdout.trim() || undefined;
 	if (options.requireSuccess) {

@@ -10,6 +10,9 @@ function resolveBranchWithGitSync(repoDir: string): string | null {
 		cwd: repoDir,
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "ignore"],
+		// Refreshed on a timer for the footer, so a missing flag is a console window
+		// every few seconds on Windows. No-op elsewhere.
+		windowsHide: true,
 	});
 	const branch = result.status === 0 ? result.stdout.trim() : "";
 	return branch || null;
@@ -24,6 +27,8 @@ function resolveBranchWithGitAsync(repoDir: string): Promise<string | null> {
 			{
 				cwd: repoDir,
 				encoding: "utf8",
+				// Same reason as the sync path above: no console window per refresh.
+				windowsHide: true,
 			},
 			(error: ExecFileException | null, stdout: string) => {
 				if (error) {

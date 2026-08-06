@@ -77,6 +77,10 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
 					detached: process.platform !== "win32",
 					env: env ?? getShellEnv(),
 					stdio: ["ignore", "pipe", "pipe"],
+					// Not detached on Windows, so it would inherit or be given a
+					// console; its output is piped and rendered by the agent, so the
+					// window is never wanted. No-op off Windows.
+					windowsHide: true,
 				});
 				if (child.pid) trackDetachedChildPid(child.pid);
 				let timedOut = false;
