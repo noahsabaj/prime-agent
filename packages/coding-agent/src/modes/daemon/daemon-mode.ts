@@ -110,7 +110,7 @@ import { deleteSessionFile } from "../../core/session-file-actions.js";
 import {
 	acquireSessionLease,
 	canonicalSessionPath,
-	getProcessStartId,
+	getCurrentProcessStartId,
 	type SessionLease,
 } from "../../core/session-lease.js";
 import {
@@ -3012,7 +3012,10 @@ export class AgentDaemon {
 			appVersion: VERSION,
 			runtime: getDaemonRuntimeIdentity(),
 			daemonPid: process.pid,
-			...(getProcessStartId(process.pid) ? { daemonProcessStartId: getProcessStartId(process.pid) } : {}),
+			// Cached, and read once rather than twice: on Windows each uncached read
+			// is a PowerShell startup, and paying that inside the greeting is what
+			// stalled the handshake past the supervisor's connect timeout.
+			...(getCurrentProcessStartId() ? { daemonProcessStartId: getCurrentProcessStartId() } : {}),
 			clientId: client.id,
 			serverCapabilities: DAEMON_DEFAULT_SERVER_CAPABILITIES,
 		});

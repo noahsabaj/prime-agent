@@ -190,7 +190,15 @@ export function getProcessStartId(pid: number): string | undefined {
 let currentProcessStartId: string | undefined;
 let currentProcessStartIdRead = false;
 
-function getCurrentProcessStartId(): string | undefined {
+/**
+ * This process's own start identity, resolved once.
+ *
+ * Cheap to read on Linux, expensive on Windows where it costs a PowerShell
+ * startup. It also cannot change while the process is alive, so anything on a
+ * hot path — a greeting, a handshake — must come through here rather than
+ * calling getProcessStartId directly.
+ */
+export function getCurrentProcessStartId(): string | undefined {
 	if (!currentProcessStartIdRead) {
 		currentProcessStartId = getProcessStartId(process.pid);
 		currentProcessStartIdRead = true;

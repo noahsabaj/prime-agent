@@ -806,14 +806,21 @@ async function stopOrphanedWorkers(
 
 	for (const socketPath of scanSocketDir().filter((candidate) => isWorkerSocketPath(candidate))) {
 		const probe = await probeWorker(socketPath);
-		if (!probe) {
-			continue;
-		}
 		// No graceful path exists here: a worker rejects commands from a client it
 		// has not authenticated, and it does so by closing the connection — which
 		// is indistinguishable from a clean stop. Its supervisor is gone, so no
 		// client can ever authenticate. Stop the process itself.
-		const pid = verifyHelloSupervisorPid(probe.pid, probe.startId) ?? workerPids.get(normalizeSocketPath(socketPath));
+		//
+		// A failed probe is therefore the common case, not the exceptional one, and
+		// must not be read as "already stopped". The socket was just enumerated as
+		// live — a Windows pipe exists only while something serves it — so bailing
+		// out here left the worker running to relaunch a replacement supervisor,
+		// which is what kept shutdown from converging. Fall back to the pid its
+		// supervisor persisted; it is start-id verified above, so a recycled pid is
+		// never signalled.
+		const pid =
+			(probe ? verifyHelloSupervisorPid(probe.pid, probe.startId) : undefined) ??
+			workerPids.get(normalizeSocketPath(socketPath));
 		if (pid === undefined) {
 			failed.push({ socketPath, reason: "orphaned session worker: could not identify its process" });
 			continue;
