@@ -1,11 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const tsxLoader = require.resolve("tsx/esm");
+// `--import` takes a module specifier, not a path. A Windows absolute path
+// parses as a URL with scheme `d:` and the loader rejects it, so hand Node the
+// file URL both platforms accept.
+const tsxLoader = pathToFileURL(require.resolve("tsx/esm")).href;
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const aiEntryUrl = new URL("../src/index.ts", import.meta.url).href;
 
