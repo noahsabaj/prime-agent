@@ -293,7 +293,8 @@ describe("ENG-4685 daemon-backed client modes", () => {
 				expect(result.stdout).toContain('"command":"get_state","success":true');
 			}
 		}
-		expect(existsSync(socketPath)).toBe(true);
+		// A Windows daemon listens on a named pipe, which leaves no file behind.
+		expect(existsSync(socketPath)).toBe(process.platform !== "win32");
 	}, 90_000);
 
 	it("keeps the rollback frontend fully off the daemon path", async () => {

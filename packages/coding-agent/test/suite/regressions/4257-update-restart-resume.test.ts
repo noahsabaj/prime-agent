@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { join, sep } from "node:path";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -912,7 +913,7 @@ describe("issue #4257 update restart resume", () => {
 			content: followUpContent,
 		});
 
-		const sessionDir = `${harness.tempDir}/sessions`;
+		const sessionDir = join(harness.tempDir, "sessions");
 		const internals = createDaemonInternals(harness, { sessionDir });
 		internals.sessions.set(
 			"active-1",
@@ -923,7 +924,7 @@ describe("issue #4257 update restart resume", () => {
 
 		expect(manifest.sessions).toHaveLength(1);
 		const session = manifest.sessions[0];
-		expect(session?.sessionFile.startsWith(`${sessionDir}/`)).toBe(true);
+		expect(session?.sessionFile.startsWith(`${sessionDir}${sep}`)).toBe(true);
 		expect(harness.session.sessionFile).toBe(session?.sessionFile);
 		expect(readFileSync(session?.sessionFile ?? "", "utf8")).toContain('"type":"session"');
 		expect(session?.queue.actions.actions).toEqual([
@@ -941,7 +942,7 @@ describe("issue #4257 update restart resume", () => {
 		harnesses.push(harness);
 		(harness.session.agent.state as { isStreaming: boolean }).isStreaming = true;
 
-		const sessionDir = `${harness.tempDir}/sessions`;
+		const sessionDir = join(harness.tempDir, "sessions");
 		const internals = createDaemonInternals(harness, { sessionDir });
 		internals.sessions.set(
 			"active-1",
@@ -952,7 +953,7 @@ describe("issue #4257 update restart resume", () => {
 
 		expect(manifest.sessions).toHaveLength(1);
 		const session = manifest.sessions[0];
-		expect(session?.sessionFile.startsWith(`${sessionDir}/`)).toBe(true);
+		expect(session?.sessionFile.startsWith(`${sessionDir}${sep}`)).toBe(true);
 		expect(harness.session.sessionFile).toBe(session?.sessionFile);
 		expect(session).toMatchObject({
 			shouldResume: true,

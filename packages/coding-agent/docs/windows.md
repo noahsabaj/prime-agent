@@ -81,3 +81,10 @@ Two Windows differences are worth knowing:
 - `ctrl+z` suspend has no default binding; Windows terminals have no job control.
 - The kernel forkserver is Linux-only. Windows spawns kernels directly, which is
   slower to start but otherwise identical.
+- IPython's own `%%bash` cell magic resolves whatever `bash` it finds on PATH,
+  which can be WSL's — a separate environment with its own filesystem view
+  (`/mnt/c/...`) that does not inherit the kernel's variables. Prime Agent's
+  `bash` tool and `!` command do not go through that magic; they use the shell
+  resolved above. Set `shellPath` if you want a specific one.
+- Self-update infers a custom npm prefix only when npm's own shim sits beside
+  the install. Otherwise `prime-agent update` targets npm's default prefix.

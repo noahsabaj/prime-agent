@@ -93,6 +93,8 @@ process.exit(0);
 				encoding: "utf-8",
 				env: { ...process.env, [ENV_AGENT_DIR]: agentDir },
 				stdio: ["pipe", "pipe", "pipe"],
+				// npx is a `.cmd` shim on Windows, which execFile cannot launch directly.
+				shell: process.platform === "win32",
 			});
 			exitCode = 0;
 		} catch (err: unknown) {

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { createConnection } from "node:net";
 import { homedir, tmpdir, userInfo } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
 
 const DAEMON_SOCKET_MODE = 0o600;
@@ -78,6 +78,27 @@ export function defaultDaemonSocketPath(): string {
 		return `${WINDOWS_PIPE_DIR}${windowsPipePrefix()}daemon`;
 	}
 	return join(defaultDaemonSocketDir(), "daemon.sock");
+}
+
+/**
+ * A user-supplied `--daemon-socket` value the platform can actually serve.
+ *
+ * Windows serves daemons on named pipes, so a filesystem path — which is what
+ * the docs, unix habit, and every script written against them produce — cannot
+ * be listened on and fails with EACCES. Map such a value to a stable pipe name
+ * derived from it, so the same path always reaches the same daemon. Values
+ * already in the pipe namespace pass through untouched.
+ */
+export function normalizeDaemonSocketPath(socketPath: string): string {
+	if (process.platform !== "win32") {
+		return socketPath;
+	}
+	const normalized = socketPath.split("/").join("\\").toLowerCase();
+	if (normalized.startsWith("\\\\.\\pipe\\") || normalized.startsWith("\\\\?\\pipe\\")) {
+		return socketPath;
+	}
+	const key = createHash("sha256").update(resolve(socketPath).toLowerCase()).digest("hex").slice(0, 16);
+	return `${WINDOWS_PIPE_DIR}${windowsPipePrefix()}custom-${key}`;
 }
 
 /**

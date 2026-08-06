@@ -77,6 +77,7 @@ describe("ProviderAuthFlows", () => {
 	let authJsonPath: string;
 	let primeConfigPath: string;
 	let originalHome: string | undefined;
+	let originalUserProfile: string | undefined;
 	let originalPrimeTeamId: string | undefined;
 
 	beforeAll(() => {
@@ -90,6 +91,7 @@ describe("ProviderAuthFlows", () => {
 		primeConfigPath = join(tempDir, "prime-config.json");
 		writeFileSync(authJsonPath, "{}");
 		originalHome = process.env.HOME;
+		originalUserProfile = process.env.USERPROFILE;
 		originalPrimeTeamId = process.env.PRIME_TEAM_ID;
 	});
 
@@ -98,6 +100,11 @@ describe("ProviderAuthFlows", () => {
 			delete process.env.HOME;
 		} else {
 			process.env.HOME = originalHome;
+		}
+		if (originalUserProfile === undefined) {
+			delete process.env.USERPROFILE;
+		} else {
+			process.env.USERPROFILE = originalUserProfile;
 		}
 		if (originalPrimeTeamId === undefined) {
 			delete process.env.PRIME_TEAM_ID;
@@ -157,7 +164,9 @@ describe("ProviderAuthFlows", () => {
 	});
 
 	it("stores a reused Prime CLI key when Prime CLI config sync is disabled", async () => {
+		// os.homedir() reads USERPROFILE on Windows and HOME elsewhere.
 		process.env.HOME = tempDir;
+		process.env.USERPROFILE = tempDir;
 		process.env.PRIME_TEAM_ID = "env-team";
 		const defaultPrimeDir = join(tempDir, ".prime");
 		mkdirSync(defaultPrimeDir, { recursive: true });
