@@ -60,7 +60,13 @@ afterEach(() => {
 
 function createNpmPrefixInstall(template = "pi-prefix-"): { prefix: string; packageDir: string } {
 	const prefix = mkdtempSync(join(tmpdir(), template));
-	const root = join(prefix, "lib", "node_modules");
+	// npm's global root is `<prefix>/lib/node_modules` on unix but
+	// `<prefix>\node_modules` on Windows; build the layout this host would,
+	// including the npm shim that marks a Windows prefix as npm's own.
+	const root = process.platform === "win32" ? join(prefix, "node_modules") : join(prefix, "lib", "node_modules");
+	if (process.platform === "win32") {
+		writeFileSync(join(prefix, "npm.cmd"), "@echo off\n");
+	}
 	const scopeDir = join(root, "@earendil-works");
 	const packageDir = join(scopeDir, "pi-coding-agent");
 	mkdirSync(packageDir, { recursive: true });

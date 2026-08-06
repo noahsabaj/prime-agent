@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -9,6 +9,7 @@ import { IpythonKernelProvisioner } from "../src/core/tools/ipython.js";
 import { acpUpdatesForSessionEvent } from "../src/modes/acp/acp-events.js";
 import { PRIME_AGENT_META_NAMESPACE } from "../src/modes/acp/acp-meta.js";
 import type { AgentConnectionSessionEvent } from "../src/modes/agent-connection/types.js";
+import { removeTempDir } from "./utilities.js";
 
 /**
  * Real-kernel verification for ACP mode.
@@ -54,7 +55,7 @@ describe("ACP mode over a real IPython kernel", () => {
 	afterEach(async () => {
 		await provisioner?.dispose();
 		provisioner = undefined;
-		rmSync(tempDir, { recursive: true, force: true });
+		removeTempDir(tempDir);
 	});
 
 	it(

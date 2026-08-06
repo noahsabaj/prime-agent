@@ -10,15 +10,19 @@ import {
 	defaultDaemonSocketPath,
 	getDaemonSocketIdentity,
 	prepareDaemonSocketPath,
+	windowsPipePrefix,
 } from "../src/modes/daemon/daemon-socket.js";
 
 describe("defaultDaemonSocketPath", () => {
-	it("uses a fixed Windows named pipe path", () => {
+	it("uses a per-user Windows named pipe path", () => {
 		if (process.platform !== "win32") {
 			return;
 		}
 
-		expect(defaultDaemonSocketPath()).toBe("\\\\.\\pipe\\prime-agent-daemon");
+		// The pipe namespace is machine-global, so the name must be scoped per
+		// user; a fixed name would let concurrent users collide on one daemon.
+		expect(defaultDaemonSocketPath()).toBe(`\\\\.\\pipe\\${windowsPipePrefix()}daemon`);
+		expect(windowsPipePrefix()).toMatch(/^prime-agent-[a-z0-9-]+-[0-9a-f]{8}-$/);
 	});
 
 	it("uses a per-user Unix socket directory", () => {

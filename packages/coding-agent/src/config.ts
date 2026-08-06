@@ -125,10 +125,27 @@ function getInferredNpmInstall(): { root: string; prefix: string } | undefined {
 	if (!root) return undefined;
 	const rootParent = path.dirname(root);
 	if (path.basename(rootParent) === "lib") return { root, prefix: path.dirname(rootParent) };
-	// Windows global npm prefixes use `<prefix>\\node_modules`, which is
-	// indistinguishable from local project installs by path shape alone. Do not
-	// infer unsupported Windows custom prefixes without `npm root -g` evidence.
+	// Windows global npm prefixes use `<prefix>\\node_modules`, the same shape as
+	// a local project install, so path shape alone proves nothing. Infer only
+	// with evidence npm owns the prefix: a global install leaves npm's own shim
+	// and package beside the install, a project checkout does not.
+	if (process.platform === "win32" && isWindowsNpmPrefix(rootParent, root, path)) {
+		return { root, prefix: rootParent };
+	}
 	return undefined;
+}
+
+function isWindowsNpmPrefix(
+	prefix: string,
+	root: string,
+	path: Pick<typeof win32, "basename" | "dirname"> & { join?: typeof win32.join },
+): boolean {
+	const joinPath = path.join ?? win32.join;
+	return (
+		existsSync(joinPath(prefix, "npm.cmd")) ||
+		existsSync(joinPath(prefix, "npm")) ||
+		existsSync(joinPath(root, "npm", "package.json"))
+	);
 }
 
 function isDirectPackageArtifactSpec(updateSpec: string): boolean {
@@ -366,7 +383,7 @@ export function getPackageDir(): string {
 	const envDir = process.env.PI_PACKAGE_DIR;
 	if (envDir) {
 		if (envDir === "~") return homedir();
-		if (envDir.startsWith("~/")) return homedir() + envDir.slice(1);
+		if (envDir.startsWith("~/")) return join(homedir(), envDir.slice(2));
 		return envDir;
 	}
 
@@ -514,7 +531,9 @@ export const ENV_LEGACY_SESSION_DIR = `${envPrefix}_CODING_AGENT_SESSION_DIR`;
 
 export function expandTildePath(path: string): string {
 	if (path === "~") return homedir();
-	if (path.startsWith("~/")) return homedir() + path.slice(1);
+	// join, not concatenation: on Windows the latter leaves a mixed-separator
+	// path that fails every downstream string comparison.
+	if (path.startsWith("~/")) return join(homedir(), path.slice(2));
 	return path;
 }
 

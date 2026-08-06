@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupSessionResources } from "@earendil-works/pi-ai";
@@ -7,6 +7,7 @@ import type { ExtensionContext } from "../src/core/extensions/types.js";
 import type { KernelBootstrapProgressHandler } from "../src/core/kernel/bootstrap.js";
 import { type ExecuteResult, KernelBusyAfterInterruptError, KernelManager } from "../src/core/kernel/index.js";
 import { createIpythonToolDefinition, IpythonKernelProvisioner } from "../src/core/tools/ipython.js";
+import { removeTempDir } from "./utilities.js";
 
 let tempDir = "";
 
@@ -78,7 +79,7 @@ describe("IpythonKernelProvisioner", () => {
 
 	afterEach(() => {
 		if (tempDir) {
-			rmSync(tempDir, { recursive: true, force: true });
+			removeTempDir(tempDir);
 			tempDir = "";
 		}
 	});
@@ -348,7 +349,7 @@ describe("KernelManager session cleanup during startup", () => {
 
 	afterEach(() => {
 		if (tempDir) {
-			rmSync(tempDir, { recursive: true, force: true });
+			removeTempDir(tempDir);
 			tempDir = "";
 		}
 	});

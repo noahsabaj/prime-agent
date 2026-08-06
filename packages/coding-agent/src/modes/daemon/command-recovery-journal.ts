@@ -206,11 +206,15 @@ export class CommandRecoveryJournal {
 			closeSync(descriptor);
 		}
 		renameSync(tempPath, this.path);
-		const directoryDescriptor = openSync(dirname(this.path), "r");
 		try {
-			fsyncSync(directoryDescriptor);
-		} finally {
-			closeSync(directoryDescriptor);
+			const directoryDescriptor = openSync(dirname(this.path), "r");
+			try {
+				fsyncSync(directoryDescriptor);
+			} finally {
+				closeSync(directoryDescriptor);
+			}
+		} catch {
+			// Directory fsync is unavailable on some platforms; the atomic rename still protects readers.
 		}
 		this.recordCount = records.length;
 	}

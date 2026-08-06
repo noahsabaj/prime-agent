@@ -10,6 +10,7 @@ import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import type { Skill } from "../src/core/skills.js";
 import { createSyntheticSourceInfo } from "../src/core/source-info.js";
+import { SYMLINKS_SUPPORTED } from "./utilities.js";
 
 describe("DefaultResourceLoader", () => {
 	let tempDir: string;
@@ -164,7 +165,7 @@ Project skill`,
 			expect(theme?.sourcePath).toBe(projectThemePath);
 		});
 
-		it("should load symlinked user and project extensions once", async () => {
+		it.skipIf(!SYMLINKS_SUPPORTED)("should load symlinked user and project extensions once", async () => {
 			const sharedExtDir = join(tempDir, "shared-extensions");
 			mkdirSync(sharedExtDir, { recursive: true });
 			writeFileSync(
@@ -671,6 +672,7 @@ export default function(pi: ExtensionAPI) {
 				`
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { SYMLINKS_SUPPORTED } from "./utilities.js";
 export default function(pi: ExtensionAPI) {
   pi.registerTool({
     name: "duplicate-tool",

@@ -101,6 +101,23 @@ function readLeaseOwner(directory: string): SessionLeaseOwner | undefined {
 	}
 }
 
+/**
+ * Whether a failed lease-directory rename means someone else holds the lease.
+ *
+ * Renaming a directory onto an existing one is the atomic "take the lease"
+ * primitive. POSIX reports the loser with EEXIST or ENOTEMPTY; Windows reports
+ * EPERM or EACCES for the same collision. Treating the Windows codes as a hard
+ * error would surface a raw EPERM instead of SessionAlreadyActiveError and
+ * would never reclaim a stale lease.
+ */
+function isLeaseDirectoryTakenError(error: unknown): boolean {
+	const code = (error as NodeJS.ErrnoException).code;
+	if (code === "EEXIST" || code === "ENOTEMPTY") {
+		return true;
+	}
+	return process.platform === "win32" && (code === "EPERM" || code === "EACCES");
+}
+
 function isProcessAlive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
@@ -264,8 +281,7 @@ export function acquireSessionLease(
 				return new SessionLease(canonicalPath, directory, token);
 			} catch (error) {
 				rmSync(candidateDirectory, { recursive: true, force: true });
-				const code = (error as NodeJS.ErrnoException).code;
-				if (code !== "EEXIST" && code !== "ENOTEMPTY") {
+				if (!isLeaseDirectoryTakenError(error)) {
 					throw error;
 				}
 				const existingOwner = readLeaseOwner(directory);

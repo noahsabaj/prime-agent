@@ -10,6 +10,7 @@ import {
 	mergeTurnFileChanges,
 } from "../src/modes/interactive/components/edit-summary.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
+import { SYMLINKS_SUPPORTED } from "./utilities.js";
 
 const usage: Usage = {
 	input: 0,
@@ -105,7 +106,7 @@ describe("edit summaries", () => {
 		expect([...changes.values()]).toEqual([{ path: "~/same.ts", added: 2, removed: 2 }]);
 	});
 
-	test("coalesces canonical paths across a symlinked cwd", () => {
+	test.skipIf(!SYMLINKS_SUPPORTED)("coalesces canonical paths across a symlinked cwd", () => {
 		const root = mkdtempSync(join(tmpdir(), "edit-summary-symlink-"));
 		try {
 			const realCwd = join(root, "real");

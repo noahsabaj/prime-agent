@@ -2,7 +2,7 @@
  * Shared test utilities for coding-agent tests.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Agent } from "@earendil-works/pi-agent-core";
@@ -314,4 +314,42 @@ export function buildTestTree(
 	}
 
 	return ids;
+}
+
+/**
+ * Whether this process may create symlinks.
+ *
+ * Windows gates symlink creation behind SeCreateSymbolicLinkPrivilege, which
+ * only Developer Mode or an elevated shell grants. Tests that assert symlink
+ * behavior skip on accounts without it rather than fail.
+ */
+export const SYMLINKS_SUPPORTED = ((): boolean => {
+	const probeDir = join(tmpdir(), `prime-agent-symlink-probe-${process.pid}`);
+	try {
+		mkdirSync(probeDir, { recursive: true });
+		writeFileSync(join(probeDir, "target.txt"), "probe");
+		symlinkSync("target.txt", join(probeDir, "link.txt"));
+		return true;
+	} catch {
+		return false;
+	} finally {
+		rmSync(probeDir, { recursive: true, force: true });
+	}
+})();
+
+/**
+ * Remove a test temp directory without failing teardown on Windows.
+ *
+ * Windows refuses to unlink a file or directory another handle still holds, and
+ * a fixture process can outlive its dispose. A leaked temp dir is not a test
+ * result; the OS reclaims it.
+ */
+export function removeTempDir(dir: string): void {
+	try {
+		rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 });
+	} catch (error) {
+		if (process.platform !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM") {
+			throw error;
+		}
+	}
 }

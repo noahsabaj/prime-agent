@@ -1,8 +1,9 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { KernelManager } from "../src/core/kernel/index.js";
+import { removeTempDir } from "./utilities.js";
 
 let tempDir = "";
 
@@ -18,7 +19,7 @@ describe("KernelManager startup", () => {
 
 	afterEach(() => {
 		if (tempDir) {
-			rmSync(tempDir, { recursive: true, force: true });
+			removeTempDir(tempDir);
 			tempDir = "";
 		}
 	});

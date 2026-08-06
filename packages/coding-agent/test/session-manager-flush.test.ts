@@ -47,6 +47,7 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 import { SessionManager } from "../src/core/session-manager.js";
+import { SYMLINKS_SUPPORTED } from "./utilities.js";
 
 const tempDirs: string[] = [];
 
@@ -174,7 +175,7 @@ describe("SessionManager.flushNow", () => {
 		);
 	});
 
-	it("rewrites a cross-directory symlink target without replacing the alias", () => {
+	it.skipIf(!SYMLINKS_SUPPORTED)("rewrites a cross-directory symlink target without replacing the alias", () => {
 		const dir = createTempDir();
 		const targetDir = join(dir, "targets");
 		const aliasDir = join(dir, "aliases");

@@ -1,10 +1,11 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getBundledSkillsDir } from "../src/config.js";
 import type { PythonSkillRuntimeInfo } from "../src/core/skills.js";
 import { IpythonKernelProvisioner } from "../src/core/tools/ipython.js";
+import { removeTempDir } from "./utilities.js";
 
 function bundledRlmHeartbeatSkill(): PythonSkillRuntimeInfo {
 	const packagePath = join(getBundledSkillsDir(), "rlm-heartbeat");
@@ -28,7 +29,7 @@ describe("RLM heartbeat skill over the kernel host bridge", () => {
 	afterEach(async () => {
 		await provisioner?.dispose();
 		provisioner = undefined;
-		rmSync(tempDir, { recursive: true, force: true });
+		removeTempDir(tempDir);
 	});
 
 	it("round-trips create, list, update, and delete through a live kernel", async () => {

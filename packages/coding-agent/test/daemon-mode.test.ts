@@ -44,6 +44,7 @@ import {
 } from "../src/modes/daemon/daemon-protocol.js";
 import type { SessionSummary } from "../src/modes/daemon/daemon-session-list.js";
 import { DAEMON_WORKER_SUPERVISOR_SOCKET_ENV } from "../src/modes/daemon/daemon-worker-protocol.js";
+import { SYMLINKS_SUPPORTED } from "./utilities.js";
 
 describe("daemon mode helpers", () => {
 	it("preserves envelope client identity while registering prompt admission", () => {
@@ -485,80 +486,83 @@ describe("daemon mode helpers", () => {
 		}
 	});
 
-	it("canonicalizes symlinked paths in the family catalog and name reservations", async () => {
-		const tempDir = mkdtempSync(join(tmpdir(), "prime-agent-family-catalog-paths-"));
-		try {
-			const realDir = join(tempDir, "real");
-			const aliasDir = join(tempDir, "alias");
-			mkdirSync(realDir);
-			symlinkSync(realDir, aliasDir, "dir");
-			const parentPath = join(realDir, "parent.jsonl");
-			writeFileSync(parentPath, "");
-			const daemon = new AgentDaemon(join(tempDir, "daemon.sock"), {
-				defaultSessionConfig: { agentDir: tempDir, cwd: tempDir, sessionDir: tempDir },
-				createRuntime: vi.fn(),
-			});
-			const parent = makeState("parent");
-			parent.runtime = {
-				...parent.runtime,
-				cwd: tempDir,
-				metadata: { kind: "top-level", createdAt: 1 },
-				session: {
-					sessionId: "session-parent",
-					sessionName: "parent",
-					sessionFile: parentPath,
-					sessionManager: { getSessionArtifactDir: () => undefined },
-					rlmDepth: 0,
-					isStreaming: false,
-					isSessionActive: false,
-					unfinishedActionCount: 0,
-					hasRunningRlmChildren: () => false,
-				},
-			} as never;
-			const child = {
-				activeSessionId: "child-active",
-				sessionId: "session-child",
-				sessionName: "child",
-				runtimeKind: "subagent",
-				cwd: tempDir,
-				isStreaming: false,
-				unfinishedActionCount: 0,
-				parentSessionPath: join(aliasDir, "parent.jsonl"),
-				rlmDepth: 1,
-				status: "idle",
-			};
-			const internals = daemon as unknown as {
-				sessions: Map<string, ActiveSessionState>;
-				remoteAgentPeers: Map<string, typeof child>;
-				createAgentFamilyRoster(state: ActiveSessionState): Promise<{ entries: Array<{ id: string }> }>;
-			};
-			internals.sessions.set(parent.activeSessionId, parent);
-			internals.remoteAgentPeers.set(child.activeSessionId, child);
-			const listAll = vi.spyOn(SessionManager, "listAll").mockResolvedValue([]);
+	it.skipIf(!SYMLINKS_SUPPORTED)(
+		"canonicalizes symlinked paths in the family catalog and name reservations",
+		async () => {
+			const tempDir = mkdtempSync(join(tmpdir(), "prime-agent-family-catalog-paths-"));
 			try {
-				expect(await internals.createAgentFamilyRoster(parent)).toMatchObject({
-					entries: [expect.objectContaining({ id: "session-child" })],
+				const realDir = join(tempDir, "real");
+				const aliasDir = join(tempDir, "alias");
+				mkdirSync(realDir);
+				symlinkSync(realDir, aliasDir, "dir");
+				const parentPath = join(realDir, "parent.jsonl");
+				writeFileSync(parentPath, "");
+				const daemon = new AgentDaemon(join(tempDir, "daemon.sock"), {
+					defaultSessionConfig: { agentDir: tempDir, cwd: tempDir, sessionDir: tempDir },
+					createRuntime: vi.fn(),
 				});
-				expect(
-					sessionNameReservationKey({
-						name: "worker",
-						depth: 1,
-						parentSessionPath: parentPath,
-					}),
-				).toBe(
-					sessionNameReservationKey({
-						name: "worker",
-						depth: 1,
-						parentSessionPath: join(aliasDir, "parent.jsonl"),
-					}),
-				);
+				const parent = makeState("parent");
+				parent.runtime = {
+					...parent.runtime,
+					cwd: tempDir,
+					metadata: { kind: "top-level", createdAt: 1 },
+					session: {
+						sessionId: "session-parent",
+						sessionName: "parent",
+						sessionFile: parentPath,
+						sessionManager: { getSessionArtifactDir: () => undefined },
+						rlmDepth: 0,
+						isStreaming: false,
+						isSessionActive: false,
+						unfinishedActionCount: 0,
+						hasRunningRlmChildren: () => false,
+					},
+				} as never;
+				const child = {
+					activeSessionId: "child-active",
+					sessionId: "session-child",
+					sessionName: "child",
+					runtimeKind: "subagent",
+					cwd: tempDir,
+					isStreaming: false,
+					unfinishedActionCount: 0,
+					parentSessionPath: join(aliasDir, "parent.jsonl"),
+					rlmDepth: 1,
+					status: "idle",
+				};
+				const internals = daemon as unknown as {
+					sessions: Map<string, ActiveSessionState>;
+					remoteAgentPeers: Map<string, typeof child>;
+					createAgentFamilyRoster(state: ActiveSessionState): Promise<{ entries: Array<{ id: string }> }>;
+				};
+				internals.sessions.set(parent.activeSessionId, parent);
+				internals.remoteAgentPeers.set(child.activeSessionId, child);
+				const listAll = vi.spyOn(SessionManager, "listAll").mockResolvedValue([]);
+				try {
+					expect(await internals.createAgentFamilyRoster(parent)).toMatchObject({
+						entries: [expect.objectContaining({ id: "session-child" })],
+					});
+					expect(
+						sessionNameReservationKey({
+							name: "worker",
+							depth: 1,
+							parentSessionPath: parentPath,
+						}),
+					).toBe(
+						sessionNameReservationKey({
+							name: "worker",
+							depth: 1,
+							parentSessionPath: join(aliasDir, "parent.jsonl"),
+						}),
+					);
+				} finally {
+					listAll.mockRestore();
+				}
 			} finally {
-				listAll.mockRestore();
+				rmSync(tempDir, { recursive: true, force: true });
 			}
-		} finally {
-			rmSync(tempDir, { recursive: true, force: true });
-		}
-	});
+		},
+	);
 
 	it("lists and sends agent messages to completed retained subagents", async () => {
 		const daemon = new AgentDaemon("/tmp/prime-agent-test.sock", {
@@ -2465,7 +2469,7 @@ describe("daemon mode helpers", () => {
 		expect((await internals.createAgentObserveListResult(targetState)).current.status).toBe("compacting");
 	});
 
-	it("canonicalizes symlinked family paths before comparison", () => {
+	it.skipIf(!SYMLINKS_SUPPORTED)("canonicalizes symlinked family paths before comparison", () => {
 		const tempDir = mkdtempSync(join(tmpdir(), "prime-agent-family-paths-"));
 		try {
 			const realDir = join(tempDir, "real");

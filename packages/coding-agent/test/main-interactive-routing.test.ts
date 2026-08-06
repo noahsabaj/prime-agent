@@ -24,6 +24,7 @@ import {
 	shouldUseEphemeralSessionManagerForDaemonInteractive,
 } from "../src/main.js";
 import type { SessionSummary } from "../src/modes/index.js";
+import { SYMLINKS_SUPPORTED } from "./utilities.js";
 
 describe("interactive startup routing", () => {
 	test.each(["interactive", "print", "json", "rpc"] as const)(
@@ -302,7 +303,7 @@ describe("daemon-backed interactive session manager routing", () => {
 		).toBe(activeSummary);
 	});
 
-	test("finds an active daemon session through a symlinked resume path", () => {
+	test.skipIf(!SYMLINKS_SUPPORTED)("finds an active daemon session through a symlinked resume path", () => {
 		const directory = mkdtempSync(join(tmpdir(), "prime-agent-resume-"));
 		try {
 			const sessionFile = join(directory, "session.jsonl");

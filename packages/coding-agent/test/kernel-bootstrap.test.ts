@@ -8,6 +8,7 @@ import {
 	DEFAULT_RLM_EXTRA_UV_ARGS,
 	ensureKernelPython,
 	getKernelVenvDir,
+	getVenvPythonPath,
 	type KernelPythonSkill,
 	resolveRuntimeIdentity,
 } from "../src/core/kernel/bootstrap.js";
@@ -147,7 +148,21 @@ function installFakeUv(): string {
 	return logPath;
 }
 
-describe("kernel bootstrap", () => {
+describe("kernel venv layout", () => {
+	it("uses the interpreter path the platform's venv actually creates", () => {
+		const venv = join(tmpdir(), "kernel-venv");
+		expect(getVenvPythonPath(venv)).toBe(
+			process.platform === "win32" ? join(venv, "Scripts", "python.exe") : join(venv, "bin", "python"),
+		);
+	});
+});
+
+// The fixtures below stand up a fake `uv` and a fake interpreter as `#!/bin/sh`
+// scripts, which Windows cannot execute: `spawn` refuses `.cmd`/`.bat` without a
+// shell, and there is no way to write an executable stub `python.exe`. The
+// production path these cover is exercised on Windows by the venv layout test
+// above and by the real bootstrap.
+describe.skipIf(process.platform === "win32")("kernel bootstrap", () => {
 	beforeEach(async () => {
 		runtimeIdentity = await resolveRuntimeIdentity();
 		originalEnv = { ...process.env };

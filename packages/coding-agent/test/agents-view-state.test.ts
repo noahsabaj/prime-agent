@@ -48,6 +48,7 @@ import {
 import { formatAgentDepthLabel } from "../src/modes/interactive/interactive-mode.js";
 import type { InteractiveModeUiServices } from "../src/modes/interactive/interactive-mode-services.js";
 import type { Theme } from "../src/modes/interactive/theme/theme.js";
+import { SYMLINKS_SUPPORTED } from "./utilities.js";
 
 function heartbeat(id: string, nextRunAt?: string, activeSessionId = "child") {
 	return {
@@ -953,7 +954,7 @@ describe("agents view state", () => {
 		]);
 	});
 
-	test("deduplicates and protects sessions across symlink aliases", () => {
+	test.skipIf(!SYMLINKS_SUPPORTED)("deduplicates and protects sessions across symlink aliases", () => {
 		const root = mkdtempSync(join(tmpdir(), "session-view-alias-"));
 		try {
 			const real = join(root, "session.jsonl");
@@ -969,7 +970,7 @@ describe("agents view state", () => {
 		}
 	});
 
-	test("uses canonical path and fallback active-id keys for heartbeat ancestry", () => {
+	test.skipIf(!SYMLINKS_SUPPORTED)("uses canonical path and fallback active-id keys for heartbeat ancestry", () => {
 		const root = mkdtempSync(join(tmpdir(), "session-view-parent-alias-"));
 		try {
 			const path = join(root, "parent.jsonl");

@@ -33,6 +33,10 @@ const HOST_REQUEST_DISPOSE_TIMEOUT_MS = 5000;
 const DEFAULT_SNAPSHOT_DEBOUNCE_MS = 1500;
 // How often to poll a forked kernel's pid for unexpected death.
 const FORKED_LIVENESS_POLL_MS = 1000;
+// How long dispose waits for a signalled kernel to actually exit, and how often
+// it re-checks a forked kernel's pid while waiting.
+const KERNEL_EXIT_TIMEOUT_MS = 2000;
+const FORKED_EXIT_POLL_MS = 25;
 // Snapshot/restore cells can be large to (de)serialize; give them room beyond the user cap.
 const SNAPSHOT_MAX_OUTPUT_CHARS = 1_000_000;
 // Cap how long a graceful dispose waits on the final snapshot; the debounced
@@ -1504,6 +1508,9 @@ export class KernelManager {
 			this.state = "shutdown";
 			liveKernels.delete(this);
 			const inFlightHostRequests = [...this.inFlightHostRequests];
+			// cleanupResources clears these; keep them to wait on the real exit.
+			const child = this.kernel;
+			const forkedPid = this.kernelPid;
 			// TODO: plumb AbortSignal through AgentSession.prompt so disposal can cancel long-running child loops.
 			try {
 				if (inFlightHostRequests.length > 0) {
@@ -1512,7 +1519,44 @@ export class KernelManager {
 			} finally {
 				this.cleanupResources();
 			}
+			await this.waitForKernelExit(child, forkedPid);
 		})();
+	}
+
+	/**
+	 * Wait for the kernel process to actually be gone, not merely signalled.
+	 *
+	 * `kill` only requests termination. Windows keeps a process's working
+	 * directory locked until it exits, so anything that removes that directory
+	 * after dispose — session teardown, a caller's temp dir — fails with EPERM
+	 * unless the exit is awaited. Bounded: a kernel that ignores the signal must
+	 * not hang disposal.
+	 */
+	private async waitForKernelExit(child: ChildProcess | undefined, forkedPid: number | undefined): Promise<void> {
+		const deadline = Date.now() + KERNEL_EXIT_TIMEOUT_MS;
+		if (child) {
+			if (child.exitCode !== null || child.signalCode !== null) return;
+			await new Promise<void>((resolveExit) => {
+				const timer = globalThis.setTimeout(finish, KERNEL_EXIT_TIMEOUT_MS);
+				timer.unref?.();
+				function finish(): void {
+					globalThis.clearTimeout(timer);
+					child?.removeListener("exit", finish);
+					resolveExit();
+				}
+				child.once("exit", finish);
+			});
+			return;
+		}
+		// A forked kernel is not a direct child, so it emits no "exit" event.
+		while (forkedPid !== undefined && Date.now() < deadline) {
+			try {
+				process.kill(forkedPid, 0);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "EPERM") return;
+			}
+			await sleep(FORKED_EXIT_POLL_MS);
+		}
 	}
 
 	/** Synchronous best-effort cleanup. Safe to call from `process.on('exit')`. */

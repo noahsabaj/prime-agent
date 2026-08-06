@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -22,6 +22,7 @@ import {
 import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import type { LoadExtensionsResult } from "../src/core/extensions/index.js";
+import { getVenvPythonPath } from "../src/core/kernel/bootstrap.js";
 import { type HostRequestHandlers, KernelManager } from "../src/core/kernel/index.js";
 import { convertToLlm } from "../src/core/messages.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
@@ -37,7 +38,7 @@ import type { Skill } from "../src/core/skills.js";
 import { createSyntheticSourceInfo } from "../src/core/source-info.js";
 import { type ActiveSessionState, resolveActiveSessionState } from "../src/modes/daemon/active-session-state.js";
 import { AgentDaemon } from "../src/modes/daemon/daemon-mode.js";
-import { createTestExtensionsResult, createTestResourceLoader } from "./utilities.js";
+import { createTestExtensionsResult, createTestResourceLoader, removeTempDir } from "./utilities.js";
 
 const model = getModel("anthropic", "claude-sonnet-4-5")!;
 
@@ -243,7 +244,7 @@ describe("AgentSession rlm recursion", () => {
 	afterEach(() => {
 		session?.dispose();
 		session = undefined;
-		rmSync(tempDir, { recursive: true, force: true });
+		removeTempDir(tempDir);
 	});
 
 	function createSession(
@@ -2138,7 +2139,7 @@ describe("AgentSession rlm recursion", () => {
 
 	it("lets a stale kernel depth cap defer to the live host gate", () => {
 		const python =
-			process.env.PRIME_AGENT_KERNEL_PYTHON ?? join(homedir(), ".prime", "agent", "kernel-venv", "bin", "python");
+			process.env.PRIME_AGENT_KERNEL_PYTHON ?? getVenvPythonPath(join(homedir(), ".prime", "agent", "kernel-venv"));
 		const runtime = join(process.cwd(), "..", "..", "prime-agent-runtime", "src");
 		const probe = spawnSync(
 			python,
@@ -3198,7 +3199,7 @@ describe("AgentSession RLM session dir", () => {
 	afterEach(() => {
 		session?.dispose();
 		session = undefined;
-		rmSync(tempDir, { recursive: true, force: true });
+		removeTempDir(tempDir);
 	});
 
 	function createSession(
