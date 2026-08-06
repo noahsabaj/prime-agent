@@ -344,11 +344,14 @@ export const SYMLINKS_SUPPORTED = ((): boolean => {
  * a fixture process can outlive its dispose. A leaked temp dir is not a test
  * result; the OS reclaims it.
  */
+const WINDOWS_DIR_IN_USE_CODES = new Set(["EPERM", "EBUSY", "ENOTEMPTY"]);
+
 export function removeTempDir(dir: string): void {
 	try {
 		rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 });
 	} catch (error) {
-		if (process.platform !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM") {
+		const code = (error as NodeJS.ErrnoException).code ?? "";
+		if (process.platform !== "win32" || !WINDOWS_DIR_IN_USE_CODES.has(code)) {
 			throw error;
 		}
 	}

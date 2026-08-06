@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.js";
+import { signalProcessGroupOrProcess } from "../src/utils/child-process.js";
+import { removeTempDir } from "./utilities.js";
 
 /**
  * Cold real-CLI ACP coverage.
@@ -27,7 +29,7 @@ afterEach(async () => {
 		await new Promise<void>((done) => server.close(() => done()));
 	}
 	for (const dir of tempDirs.splice(0)) {
-		rmSync(dir, { recursive: true, force: true });
+		removeTempDir(dir);
 	}
 });
 
@@ -174,12 +176,24 @@ async function driveAcpTurn(baseUrl: string): Promise<AcpResult> {
 			new Promise<boolean>((resolveTimeout) => setTimeout(() => resolveTimeout(false), 10_000)),
 		]);
 		if (!exitedInTime) {
-			child.kill("SIGTERM");
+			// On Windows `kill` reaches this process alone, leaving the supervisor and
+			// kernel it started holding the temp directory open.
+			if (child.pid === undefined) {
+				child.kill("SIGTERM");
+			} else {
+				signalProcessGroupOrProcess(child.pid, "SIGTERM");
+			}
 			const stoppedInTime = await Promise.race([
 				exited.then(() => true),
 				new Promise<boolean>((resolveTimeout) => setTimeout(() => resolveTimeout(false), 5_000)),
 			]);
-			if (!stoppedInTime) child.kill("SIGKILL");
+			if (!stoppedInTime) {
+				if (child.pid === undefined) {
+					child.kill("SIGKILL");
+				} else {
+					signalProcessGroupOrProcess(child.pid, "SIGKILL");
+				}
+			}
 		}
 	}
 	return { responses, updates };

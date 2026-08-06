@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -17,6 +17,8 @@ import { DaemonAgentConnection } from "../src/modes/agent-connection/daemon-agen
 import { DaemonClient, getDaemonSocketCloseReason } from "../src/modes/daemon/daemon-client.js";
 import type { SessionSummary } from "../src/modes/daemon/daemon-session-list.js";
 import type { DaemonWorkerDescriptor } from "../src/modes/daemon/daemon-worker-protocol.js";
+import { signalProcessGroupOrProcess } from "../src/utils/child-process.js";
+import { removeTempDir } from "./utilities.js";
 
 const cliPath = resolve(__dirname, "../src/cli.ts");
 const tsxPath = resolve(__dirname, "../../../node_modules/tsx/dist/cli.mjs");
@@ -41,31 +43,35 @@ afterEach(async () => {
 		}
 	}
 	daemonSockets.clear();
+	// `child.kill` and `process.kill(-pid)` both reach a single process on Windows,
+	// which has no process groups: a supervisor's workers, their kernels, and the
+	// catalog child all survive teardown, keep the temp directory open, and make
+	// the removal below fail with EBUSY. signalProcessGroupOrProcess walks the
+	// real process tree there and signals the group on unix.
 	for (const child of children) {
 		if (child.exitCode === null && child.signalCode === null) {
-			child.kill("SIGTERM");
+			if (child.pid === undefined) {
+				child.kill("SIGTERM");
+			} else {
+				signalProcessGroupOrProcess(child.pid, "SIGTERM");
+			}
 		}
 	}
 	children.clear();
 	for (const pid of workerPids) {
-		try {
-			process.kill(pid, "SIGCONT");
-		} catch {
-			// Already gone.
-		}
-		try {
-			process.kill(-pid, "SIGTERM");
-		} catch {
+		if (process.platform !== "win32") {
+			// Resume a stopped worker so it can act on the termination below.
 			try {
-				process.kill(pid, "SIGTERM");
+				process.kill(pid, "SIGCONT");
 			} catch {
 				// Already gone.
 			}
 		}
+		signalProcessGroupOrProcess(pid, "SIGTERM");
 	}
 	workerPids.clear();
 	for (const directory of tempDirs.splice(0)) {
-		rmSync(directory, { recursive: true, force: true });
+		removeTempDir(directory);
 	}
 });
 
