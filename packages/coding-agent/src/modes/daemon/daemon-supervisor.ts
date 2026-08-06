@@ -417,13 +417,9 @@ function createWorkerStartupGate(descriptorDir: string, workerId: string): Worke
 				// The worker's own deadline and parent-liveness check still release it.
 			}
 		},
-		cleanup: () => {
-			try {
-				rmSync(gatePath, { force: true });
-			} catch {
-				// A leftover gate file is harmless; the name is unique per worker.
-			}
-		},
+		// The worker removes the marker once it has read it. Deleting it here would
+		// race the worker's poll and swallow the very signal it is waiting for.
+		cleanup: () => {},
 	};
 }
 

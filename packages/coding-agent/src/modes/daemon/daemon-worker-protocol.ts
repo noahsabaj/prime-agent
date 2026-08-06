@@ -143,17 +143,17 @@ function waitForDaemonWorkerStartupGatePath(gatePath: string): void {
 		} catch {
 			// Not written yet.
 		}
-		if (marker === DAEMON_WORKER_STARTUP_GATE_COMMIT) {
-			// The worker owns the gate file once it has observed the commit; the
-			// supervisor must not race it by deleting the marker first.
+		if (marker !== undefined && marker.length > 0) {
+			// The worker owns the marker once it has read it; the supervisor must not
+			// race it away, so cleanup happens here for both outcomes.
 			try {
 				rmSync(gatePath, { force: true });
 			} catch {
 				// A leftover gate file is harmless; the name is unique per worker.
 			}
-			return;
-		}
-		if (marker !== undefined && marker.length > 0) {
+			if (marker === DAEMON_WORKER_STARTUP_GATE_COMMIT) {
+				return;
+			}
 			throw new Error("Daemon session worker startup was cancelled");
 		}
 		if (supervisorPid > 0 && !isProcessAlive(supervisorPid)) {

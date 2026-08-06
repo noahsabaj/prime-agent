@@ -29,6 +29,27 @@ import { WorkerRecoveryJournal } from "../src/modes/daemon/worker-recovery-journ
 import type { PrivateFrame } from "../src/modes/session-worker/private-framing.js";
 import { createDeferred } from "./suite/scheduling.js";
 
+// The startup gate is a pipe on fd 3 on POSIX and a file the worker polls on
+// Windows (which cannot inherit a pipe above fd 2). These stand-in workers have
+// to read whichever transport the supervisor actually handed them.
+const READ_GATE_SOURCE = `
+const fs = require("node:fs");
+const gatePath = process.env.PRIME_AGENT_INTERNAL_DAEMON_WORKER_STARTUP_GATE_PATH;
+function readGate() {
+	if (!gatePath) return fs.readFileSync(3, "utf8");
+	const sleeper = new Int32Array(new SharedArrayBuffer(4));
+	const deadline = Date.now() + 30000;
+	while (Date.now() < deadline) {
+		try {
+			const marker = fs.readFileSync(gatePath, "utf8");
+			if (marker.length > 0) return marker;
+		} catch {}
+		Atomics.wait(sleeper, 0, 0, 10);
+	}
+	return "";
+}
+`;
+
 const workerLaunchTestState = vi.hoisted(() => ({
 	capture: false,
 	forceMissingProcessStartId: false,
@@ -70,7 +91,7 @@ vi.mock("../src/cli/subprocess-launch.js", async (importOriginal) => {
 					command: process.execPath,
 					args: [
 						"--eval",
-						`const fs = require("node:fs"); const marker = fs.readFileSync(3, "utf8"); if (marker === ${commitMarker}) { fs.writeFileSync(${markerPath}, marker); setInterval(() => {}, 1000); }`,
+						`${READ_GATE_SOURCE} const marker = readGate(); if (marker === ${commitMarker}) { fs.writeFileSync(${markerPath}, marker); setInterval(() => {}, 1000); }`,
 						"--",
 						...args,
 					],
@@ -79,7 +100,10 @@ vi.mock("../src/cli/subprocess-launch.js", async (importOriginal) => {
 			if (workerLaunchTestState.fixtureMode === "close-gate") {
 				return {
 					command: process.execPath,
-					args: ["--eval", 'require("node:fs").closeSync(3)'],
+					args: [
+						"--eval",
+						'const p = process.env.PRIME_AGENT_INTERNAL_DAEMON_WORKER_STARTUP_GATE_PATH; if (p) { process.exit(0); } else { require("node:fs").closeSync(3); }',
+					],
 				};
 			}
 			if (workerLaunchTestState.fixtureMode === "successful-gate") {
@@ -88,7 +112,7 @@ vi.mock("../src/cli/subprocess-launch.js", async (importOriginal) => {
 					command: process.execPath,
 					args: [
 						"--eval",
-						`const fs = require("node:fs"); const marker = fs.readFileSync(3, "utf8"); fs.writeFileSync(${markerPath}, marker); setInterval(() => {}, 1000);`,
+						`${READ_GATE_SOURCE} const marker = readGate(); fs.writeFileSync(${markerPath}, marker); setInterval(() => {}, 1000);`,
 					],
 				};
 			}

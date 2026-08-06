@@ -88,3 +88,9 @@ Two Windows differences are worth knowing:
   resolved above. Set `shellPath` if you want a specific one.
 - Self-update infers a custom npm prefix only when npm's own shim sits beside
   the install. Otherwise `prime-agent update` targets npm's default prefix.
+- Daemon-backed headless client modes (`--print`, `--mode json`, `--mode rpc`
+  routed through a supervisor) do not yet complete a session: the supervisor
+  launches a worker, the worker passes its startup gate, and the supervisor
+  then times out connecting to the worker's pipe. Interactive sessions and the
+  owned-worker frontend (`PRIME_AGENT_INTERNAL_LEGACY_OWNED_WORKER_FRONTEND=1`)
+  are unaffected.
