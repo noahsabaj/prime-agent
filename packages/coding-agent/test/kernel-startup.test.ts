@@ -24,7 +24,9 @@ describe("KernelManager startup", () => {
 		}
 	});
 
-	it("surfaces kernels that exit before resolving ports", async () => {
+	// The stub kernel is a `#!/bin/sh` script, which Windows cannot execute, so
+	// the failure there is a spawn error rather than the stub's own stderr.
+	it.skipIf(process.platform === "win32")("surfaces kernels that exit before resolving ports", async () => {
 		const python = join(tempDir, "python");
 		writeExecutable(python, ["#!/bin/sh", 'echo "fake kernel died before binding" >&2', "exit 42", ""].join("\n"));
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});

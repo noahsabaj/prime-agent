@@ -34,6 +34,8 @@ const originalPath = process.env.PATH;
 const originalOffline = process.env.PI_OFFLINE;
 const pathDir = join(toolState.toolsDir, "path");
 
+// The stub is a `#!/bin/sh` script, which Windows cannot execute, so the
+// version check it stands in for can never succeed there.
 function writeExecutable(filePath: string, exitCode = 0): void {
 	writeFileSync(filePath, `#!/bin/sh\nexit ${exitCode}\n`, "utf8");
 	chmodSync(filePath, 0o755);
@@ -66,19 +68,22 @@ describe("tools manager", () => {
 		rmSync(toolState.toolsDir, { recursive: true, force: true });
 	});
 
-	it("accepts managed and PATH tools only when their version check succeeds", () => {
-		const managedPath = join(toolState.toolsDir, "rg");
-		writeExecutable(managedPath);
-		expect(getToolPath("rg")).toBe(managedPath);
+	it.skipIf(process.platform === "win32")(
+		"accepts managed and PATH tools only when their version check succeeds",
+		() => {
+			const managedPath = join(toolState.toolsDir, "rg");
+			writeExecutable(managedPath);
+			expect(getToolPath("rg")).toBe(managedPath);
 
-		writeExecutable(managedPath, 1);
-		const pathBinary = join(pathDir, "rg");
-		writeExecutable(pathBinary);
-		expect(getToolPath("rg")).toBe("rg");
+			writeExecutable(managedPath, 1);
+			const pathBinary = join(pathDir, "rg");
+			writeExecutable(pathBinary);
+			expect(getToolPath("rg")).toBe("rg");
 
-		writeExecutable(pathBinary, 1);
-		expect(getToolPath("rg")).toBeNull();
-	});
+			writeExecutable(pathBinary, 1);
+			expect(getToolPath("rg")).toBeNull();
+		},
+	);
 
 	it("reports offline and Termux provisioning constraints", async () => {
 		process.env.PI_OFFLINE = "1";
@@ -116,7 +121,7 @@ describe("tools manager", () => {
 		});
 	});
 
-	it("validates a downloaded binary before reporting it available", async () => {
+	it.skipIf(process.platform === "win32")("validates a downloaded binary before reporting it available", async () => {
 		toolState.platform = "win32";
 		writeExecutable(join(toolState.toolsDir, "rg.exe"), 1);
 		const fetchMock = vi

@@ -23,6 +23,25 @@ function callHandleCtrlZ(context: HandleCtrlZThis): void {
 
 const interactiveModePrototype = InteractiveMode.prototype as unknown;
 
+/**
+ * Run `fn` with `process.platform` forced to a value.
+ *
+ * handleCtrlZ branches on the platform, and the unix path is what these cases
+ * assert; without the override they take the Windows path when the suite itself
+ * runs on Windows.
+ */
+function withPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
+	const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+	Object.defineProperty(process, "platform", { configurable: true, value: platform });
+	try {
+		return fn();
+	} finally {
+		if (descriptor) {
+			Object.defineProperty(process, "platform", descriptor);
+		}
+	}
+}
+
 describe("InteractiveMode.handleCtrlZ", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
@@ -94,7 +113,7 @@ describe("InteractiveMode.handleCtrlZ", () => {
 			.mockImplementation(((_event: string, _listener: () => void) => process) as typeof process.removeListener);
 		const processKillSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
 
-		callHandleCtrlZ(context);
+		withPlatform("linux", () => callHandleCtrlZ(context));
 
 		expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 2 ** 30);
 		expect(processOnSpy).toHaveBeenCalledWith("SIGINT", expect.any(Function));
@@ -138,7 +157,7 @@ describe("InteractiveMode.handleCtrlZ", () => {
 			throw suspendError;
 		});
 
-		expect(() => callHandleCtrlZ(context)).toThrow(suspendError);
+		expect(() => withPlatform("linux", () => callHandleCtrlZ(context))).toThrow(suspendError);
 		expect(ui.stop).toHaveBeenCalledTimes(1);
 		expect(setIntervalSpy).toHaveBeenCalledTimes(1);
 		expect(clearIntervalSpy).toHaveBeenCalledWith(keepAliveHandle);

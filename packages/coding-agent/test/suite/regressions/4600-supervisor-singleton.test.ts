@@ -1150,17 +1150,22 @@ describe("ENG-4600 daemon supervisor ownership", () => {
 
 	it("unwinds real pre-bind and post-bind startup failures before retry", async () => {
 		const paths = await createPaths();
-		writeFileSync(paths.socketPath, "not a socket");
-		const preBindFailure = spawnFixture("supervisor", paths);
-		await waitForType(preBindFailure, "booted");
-		send(preBindFailure, "go");
-		expect(await waitForType(preBindFailure, "failed")).toMatchObject({
-			error: expect.stringContaining("is not a socket"),
-		});
-		await waitForExit(preBindFailure);
-		expect(listOwnerRecords(paths.registryDir)).toEqual([]);
-		expect(existsSync(`${paths.socketPath}.lock`)).toBe(false);
-		rmSync(paths.socketPath, { force: true });
+		// Staging a non-socket at the socket path is POSIX-only: on Windows the
+		// path is a pipe name, nothing can be written there, and the supervisor
+		// skips the "exists and is not a socket" guard entirely.
+		if (process.platform !== "win32") {
+			writeFileSync(paths.socketPath, "not a socket");
+			const preBindFailure = spawnFixture("supervisor", paths);
+			await waitForType(preBindFailure, "booted");
+			send(preBindFailure, "go");
+			expect(await waitForType(preBindFailure, "failed")).toMatchObject({
+				error: expect.stringContaining("is not a socket"),
+			});
+			await waitForExit(preBindFailure);
+			expect(listOwnerRecords(paths.registryDir)).toEqual([]);
+			expect(existsSync(`${paths.socketPath}.lock`)).toBe(false);
+			rmSync(paths.socketPath, { force: true });
+		}
 
 		writeFileSync(getCronJobsPath(paths.agentDir), "{ malformed\n");
 		const postBindFailure = spawnFixture("supervisor", paths);

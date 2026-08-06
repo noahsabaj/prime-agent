@@ -108,7 +108,8 @@ describe("regression #4428: remove legacy pi-mono built-in tools", () => {
 		session.dispose();
 	});
 
-	it("applies shell settings to ipython bash cells", async () => {
+	// The custom shell is a `#!/bin/sh` stub, which Windows cannot execute.
+	it.skipIf(process.platform === "win32")("applies shell settings to ipython bash cells", async () => {
 		const shellPath = join(tempDir, "custom-shell.sh");
 		writeFileSync(shellPath, "#!/bin/sh\nprintf 'custom-shell\\n'\nexec /bin/sh \"$@\"\n");
 		chmodSync(shellPath, 0o755);

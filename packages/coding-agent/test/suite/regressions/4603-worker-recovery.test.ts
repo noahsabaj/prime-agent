@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import {
 	chmodSync,
+	copyFileSync,
 	existsSync,
 	linkSync,
 	mkdirSync,
@@ -11,6 +12,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { createConnection, type Socket } from "node:net";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { APP_NAME, ENV_AGENT_DIR } from "../../../src/config.js";
@@ -125,9 +127,15 @@ afterEach(async () => {
 async function createPaths(): Promise<TestPaths> {
 	const harness = await createHarness();
 	harnesses.push(harness);
-	const executablePath = join(harness.tempDir, APP_NAME);
-	linkSync(process.execPath, executablePath);
-	const socketTmpDir = `/tmp/eng-4603-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+	// Windows refuses a hard link into a temp dir from Program Files, and only a
+	// .exe is spawnable there; copy instead.
+	const executablePath = join(harness.tempDir, process.platform === "win32" ? `${APP_NAME}.exe` : APP_NAME);
+	if (process.platform === "win32") {
+		copyFileSync(process.execPath, executablePath);
+	} else {
+		linkSync(process.execPath, executablePath);
+	}
+	const socketTmpDir = join(tmpdir(), `eng-4603-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 	mkdirSync(socketTmpDir, { recursive: true, mode: 0o700 });
 	socketTempDirs.add(socketTmpDir);
 	fixtureDescriptorDirs.add(join(harness.tempDir, "workers"));
