@@ -1,4 +1,4 @@
-import { type ChildProcess, execSync, spawn } from "child_process";
+import { type ChildProcess, execFileSync, execSync, spawn } from "child_process";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { Type } from "typebox";
@@ -1479,11 +1479,16 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	// Check if ollama is installed and local LLM tests are enabled
+	// Check if ollama is installed and local LLM tests are enabled. `which` is not
+	// a Windows command, so probing with it skipped these tests on every Windows
+	// machine regardless of whether Ollama was there.
 	let ollamaInstalled = false;
 	if (!process.env.PI_NO_LOCAL_LLM) {
 		try {
-			execSync("which ollama", { stdio: "ignore" });
+			execFileSync(process.platform === "win32" ? "where" : "which", ["ollama"], {
+				stdio: "ignore",
+				windowsHide: true,
+			});
 			ollamaInstalled = true;
 		} catch {
 			ollamaInstalled = false;
@@ -1495,9 +1500,14 @@ describe("Generate E2E Tests", () => {
 		let ollamaProcess: ChildProcess | null = null;
 
 		beforeAll(async () => {
-			// Check if model is available, if not pull it
+			// Check if model is available, if not pull it. Match in JS rather than
+			// piping to grep: execSync runs through cmd.exe on Windows, which has
+			// neither the pipeline nor grep.
 			try {
-				execSync("ollama list | grep -q 'gpt-oss:20b'", { stdio: "ignore" });
+				const installed = execFileSync("ollama", ["list"], { encoding: "utf8", windowsHide: true });
+				if (!installed.includes("gpt-oss:20b")) {
+					throw new Error("model not installed");
+				}
 			} catch {
 				console.log("Pulling gpt-oss:20b model for Ollama tests...");
 				try {
