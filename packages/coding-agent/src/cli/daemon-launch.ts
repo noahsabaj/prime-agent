@@ -27,6 +27,15 @@ import { isHelpCommandRequest, PUBLIC_COMMAND_NAMES, REMOVED_COMMAND_NAMES } fro
 import { createCliSubprocessEnv, formatCurrentCliCommand } from "./subprocess-launch.js";
 
 const DAEMON_STARTUP_TIMEOUT_MS = 30_000;
+/**
+ * How long to wait for a running daemon's greeting before judging it stale.
+ *
+ * Misjudging is expensive: the client tears down a healthy daemon and launches
+ * a replacement, which then races the original for ownership. A daemon that is
+ * still loading answers in seconds on a cold Windows process, so this has to be
+ * generous rather than merely typical.
+ */
+const DAEMON_HELLO_TIMEOUT_MS = 10_000;
 const DAEMON_STARTUP_LOG_TAIL_BYTES = 4 * 1024;
 const DAEMON_STARTUP_EXIT_GRACE_MS = 2_000;
 
@@ -83,7 +92,7 @@ export async function probeDaemonVersion(socketPath: string): Promise<DaemonVers
 		return { status: "absent" };
 	}
 	try {
-		const hello = await client.waitForHello(2000);
+		const hello = await client.waitForHello(DAEMON_HELLO_TIMEOUT_MS);
 		const current =
 			hello.protocol.version === DAEMON_PROTOCOL_VERSION &&
 			hello.schemaId === DAEMON_SCHEMA_ID &&

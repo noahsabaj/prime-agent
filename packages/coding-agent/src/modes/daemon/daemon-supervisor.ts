@@ -133,12 +133,12 @@ const WORKER_CONNECT_TIMEOUT_MS = 30_000;
 /**
  * How long to wait for a worker to answer `worker_auth`.
  *
- * Answering it makes the worker validate this supervisor's claim, which takes
- * the supervisor-ownership registry guard — a cross-process file lock whose own
- * retry budget is several seconds. Anything shorter than that budget times out
- * on a lock the worker is still legitimately waiting for, so the supervisor
- * reconnects and the pair never converges. Windows hits this routinely because
- * its file locking is slower to hand over.
+ * A worker starts serving its pipe before it has finished its own startup, so
+ * the first auth can arrive while it is still busy and take seconds to answer.
+ * Giving up early does not just retry: the supervisor drops the connection and
+ * reconnects, and the pair can trade a fresh attempt for a still-unfinished
+ * answer indefinitely. Windows hits this routinely, where a cold worker needs
+ * several seconds to reach that point.
  */
 const WORKER_AUTH_TIMEOUT_MS = 15_000;
 const WORKER_REQUEST_TIMEOUT_MS = 24 * 60 * 60 * 1000;

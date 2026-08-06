@@ -64,6 +64,11 @@ interface CliResult {
 	stderr: string;
 }
 
+// A daemon-backed run boots three Node processes; on Windows the worker alone
+// takes seconds to reach listen(), so this guard has to clear real cold starts
+// rather than the warm Linux case.
+const CLI_TIMEOUT_MS = process.platform === "win32" ? 120_000 : 20_000;
+
 async function runCli(
 	args: string[],
 	options: { agentDir: string; stdin?: string; environment?: NodeJS.ProcessEnv },
@@ -100,7 +105,7 @@ async function runCli(
 		const timeout = setTimeout(() => {
 			child.kill("SIGKILL");
 			reject(new Error(`CLI timed out\n${stderr}`));
-		}, 20_000);
+		}, CLI_TIMEOUT_MS);
 		child.once("exit", (code, signal) => {
 			clearTimeout(timeout);
 			resolveExit({ code, signal: signal as NodeJS.Signals | null });
@@ -258,44 +263,48 @@ describe("ENG-4685 daemon-backed client modes", () => {
 		expect(environment.TSX_TSCONFIG_PATH).toBe(repoTsconfigPath);
 	});
 
-	it("launches real daemon workers for every migrated client surface", async () => {
-		const root = mkdtempSync(join(tmpdir(), "prime-agent-4685-clients-"));
-		tempRoots.add(root);
-		const agentDir = join(root, "agent dir");
-		const socketPath = join(root, "daemon.sock");
-		daemonSockets.add(socketPath);
-		const baseArgs = [
-			"--daemon-socket",
-			socketPath,
-			"--model",
-			"faux/faux",
-			"--extension",
-			fauxExtensionPath,
-			"--no-tools",
-			"--no-skills",
-			"--no-prompt-templates",
-			"--no-themes",
-			"--no-context-files",
-		];
-		const cases = [
-			{ name: "print", args: ["--print"], stdin: "" },
-			{ name: "json", args: ["--mode", "json"], stdin: "" },
-			{ name: "rpc", args: ["--mode", "rpc"], stdin: '{"id":"state","type":"get_state"}\n' },
-			{ name: "piped stdin", args: [], stdin: "   \n" },
-			{ name: "no-session", args: ["--print", "--no-session"], stdin: "" },
-		];
+	it(
+		"launches real daemon workers for every migrated client surface",
+		async () => {
+			const root = mkdtempSync(join(tmpdir(), "prime-agent-4685-clients-"));
+			tempRoots.add(root);
+			const agentDir = join(root, "agent dir");
+			const socketPath = join(root, "daemon.sock");
+			daemonSockets.add(socketPath);
+			const baseArgs = [
+				"--daemon-socket",
+				socketPath,
+				"--model",
+				"faux/faux",
+				"--extension",
+				fauxExtensionPath,
+				"--no-tools",
+				"--no-skills",
+				"--no-prompt-templates",
+				"--no-themes",
+				"--no-context-files",
+			];
+			const cases = [
+				{ name: "print", args: ["--print"], stdin: "" },
+				{ name: "json", args: ["--mode", "json"], stdin: "" },
+				{ name: "rpc", args: ["--mode", "rpc"], stdin: '{"id":"state","type":"get_state"}\n' },
+				{ name: "piped stdin", args: [], stdin: "   \n" },
+				{ name: "no-session", args: ["--print", "--no-session"], stdin: "" },
+			];
 
-		for (const testCase of cases) {
-			const result = await runCli([...baseArgs, ...testCase.args], { agentDir, stdin: testCase.stdin });
-			expect(result, testCase.name).toMatchObject({ code: 0, signal: null });
-			expect(result.stderr, testCase.name).not.toContain("Timed out waiting for daemon worker");
-			if (testCase.name === "rpc") {
-				expect(result.stdout).toContain('"command":"get_state","success":true');
+			for (const testCase of cases) {
+				const result = await runCli([...baseArgs, ...testCase.args], { agentDir, stdin: testCase.stdin });
+				expect(result, testCase.name).toMatchObject({ code: 0, signal: null });
+				expect(result.stderr, testCase.name).not.toContain("Timed out waiting for daemon worker");
+				if (testCase.name === "rpc") {
+					expect(result.stdout).toContain('"command":"get_state","success":true');
+				}
 			}
-		}
-		// A Windows daemon listens on a named pipe, which leaves no file behind.
-		expect(existsSync(socketPath)).toBe(process.platform !== "win32");
-	}, 90_000);
+			// A Windows daemon listens on a named pipe, which leaves no file behind.
+			expect(existsSync(socketPath)).toBe(process.platform !== "win32");
+		},
+		process.platform === "win32" ? 600_000 : 90_000,
+	);
 
 	it("keeps the rollback frontend fully off the daemon path", async () => {
 		const root = mkdtempSync(join(tmpdir(), "prime-agent-4685-rollback-"));
