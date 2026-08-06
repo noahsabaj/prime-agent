@@ -143,6 +143,15 @@ function rematerialize(messages: AgentMessage[]): AgentMessage[] {
 	return JSON.parse(JSON.stringify(messages));
 }
 
+/**
+ * `process.execPath` as a shell command.
+ *
+ * Gates and hooks run through the platform shell, which on Windows is bash;
+ * the backslashes and the space in "C:\Program Files\nodejs\node.exe" have to be
+ * normalized and quoted or bash splits the command apart.
+ */
+const NODE_COMMAND = process.platform === "win32" ? `"${process.execPath.split("\\").join("/")}"` : process.execPath;
+
 describe("ACP mode preserves prime-agent features", () => {
 	it("streams IPython execution as an execute tool call with its cell source", async () => {
 		const harness = await createHarness({ tools: [ipythonTool as never] });
@@ -174,7 +183,7 @@ describe("ACP mode preserves prime-agent features", () => {
 			autonomous: {
 				enabled: true,
 				maxContinuations: 1,
-				gates: { commands: [`${process.execPath} -e "process.exit(1)"`], maxRetries: 1 },
+				gates: { commands: [`${NODE_COMMAND} -e "process.exit(1)"`], maxRetries: 1 },
 			},
 		});
 		harness.setResponses([fauxAssistantMessage("Attempted the task."), fauxAssistantMessage("Retried.")]);

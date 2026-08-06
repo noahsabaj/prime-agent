@@ -55,8 +55,17 @@ function createAssistant(
 }
 
 function failingGateCommand(): string {
-	return `${process.execPath} -e "console.error('gate failed'); process.exit(1)"`;
+	return `${NODE_COMMAND} -e "console.error('gate failed'); process.exit(1)"`;
 }
+
+/**
+ * `process.execPath` as a shell command.
+ *
+ * Gates and hooks run through the platform shell, which on Windows is bash;
+ * the backslashes and the space in "C:\Program Files\nodejs\node.exe" have to be
+ * normalized and quoted or bash splits the command apart.
+ */
+const NODE_COMMAND = process.platform === "win32" ? `"${process.execPath.split("\\").join("/")}"` : process.execPath;
 
 describe("AgentSession compaction characterization", () => {
 	const harnesses: Harness[] = [];

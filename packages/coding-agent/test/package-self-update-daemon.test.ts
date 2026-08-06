@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,6 +26,7 @@ import {
 	prepareDaemonUpdateRestart,
 	runDaemonUpdateRestartCoordinator,
 } from "../src/package-manager-cli.js";
+import { expectFileMode } from "./utilities.js";
 
 interface MockSessionSummary {
 	id: string;
@@ -904,7 +905,7 @@ describe("self-update daemon restart", () => {
 			expect(releaseAdmissionIndex).toBeGreaterThan(startupFenceIndex);
 			expect(ensureIndex).toBeGreaterThan(releaseAdmissionIndex);
 			expect(ensureIndex).toBeGreaterThan(shutdownIndex);
-			expect(statSync(join(agentDir, "update-restarts", "test-status.json")).mode & 0o777).toBe(0o600);
+			expectFileMode(join(agentDir, "update-restarts", "test-status.json"), 0o600);
 		} finally {
 			errorSpy.mockRestore();
 			logSpy.mockRestore();

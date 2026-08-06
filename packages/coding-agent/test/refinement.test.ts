@@ -1,4 +1,4 @@
-import { appendFileSync, chmodSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -29,6 +29,7 @@ import {
 	saveHarnessState,
 } from "../src/core/refinement/index.js";
 import type { CustomEntry } from "../src/core/session-manager.js";
+import { expectFileMode } from "./utilities.js";
 
 const { completeSimpleMock } = vi.hoisted(() => ({
 	completeSimpleMock: vi.fn(),
@@ -220,7 +221,7 @@ describe("harness refinement", () => {
 		expect(readdirSync(harnessStateDir)).toEqual([statePath.split("/").at(-1)]);
 		chmodSync(statePath, 0o600);
 		saveHarnessState(harnessStateDir, state);
-		expect(statSync(statePath).mode & 0o777).toBe(0o600);
+		expectFileMode(statePath, 0o600);
 	});
 
 	it("applies create, update, and delete for every editable harness kind", () => {

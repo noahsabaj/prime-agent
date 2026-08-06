@@ -148,6 +148,15 @@ async function runRpc(
 	};
 }
 
+/**
+ * `process.execPath` as a shell command.
+ *
+ * Gates and hooks run through the platform shell, which on Windows is bash;
+ * the backslashes and the space in "C:\Program Files\nodejs\node.exe" have to be
+ * normalized and quoted or bash splits the command apart.
+ */
+const NODE_COMMAND = process.platform === "win32" ? `"${process.execPath.split("\\").join("/")}"` : process.execPath;
+
 describe("ENG-4685 daemon-backed client modes", () => {
 	it("commits owned-worker promotion before best-effort peer synchronization", async () => {
 		const client = { id: "client-1" } as DaemonSocketClient;
@@ -206,7 +215,7 @@ describe("ENG-4685 daemon-backed client modes", () => {
 	});
 
 	it("runs host-owned autonomous gate retries through the shared completion loop", async () => {
-		const gate = `${process.execPath} -e "process.exit(0)"`;
+		const gate = `${NODE_COMMAND} -e "process.exit(0)"`;
 		const harness = await createHarness({
 			autonomous: {
 				enabled: true,

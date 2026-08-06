@@ -2,7 +2,7 @@
  * Shared test utilities for coding-agent tests.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Agent } from "@earendil-works/pi-agent-core";
@@ -351,5 +351,25 @@ export function removeTempDir(dir: string): void {
 		if (process.platform !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM") {
 			throw error;
 		}
+	}
+}
+
+/**
+ * Assert a file's POSIX permission bits, where the platform has them.
+ *
+ * Windows has no POSIX mode: `chmod` only toggles the read-only bit and `stat`
+ * reports 0o666 or 0o444 regardless of what was requested, so the file's
+ * existence is all there is to check.
+ */
+export function expectFileMode(path: string, mode: number): void {
+	if (process.platform === "win32") {
+		if (!existsSync(path)) {
+			throw new Error(`expected ${path} to exist`);
+		}
+		return;
+	}
+	const actual = statSync(path).mode & 0o777;
+	if (actual !== mode) {
+		throw new Error(`expected mode 0o${mode.toString(8)} on ${path}, got 0o${actual.toString(8)}`);
 	}
 }

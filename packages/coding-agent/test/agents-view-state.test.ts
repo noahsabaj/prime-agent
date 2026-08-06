@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import type { AgentSessionRuntimeConfig } from "../src/core/agent-session-config.js";
 import type { ModelRegistry } from "../src/core/model-registry.js";
+import { canonicalSessionPath } from "../src/core/session-lease.js";
 import type { SessionInfo } from "../src/core/session-manager.js";
 import type { SettingsManager } from "../src/core/settings-manager.js";
 import {
@@ -67,6 +68,12 @@ function heartbeat(id: string, nextRunAt?: string, activeSessionId = "child") {
 			runCount: 0,
 		},
 	};
+}
+
+// The product derives a row identity from the canonical session path, which is
+// absolute and platform-shaped; a literal "file:/tmp/..." only matches on unix.
+function sessionIdentity(sessionFile: string): string {
+	return `file:${canonicalSessionPath(sessionFile)}`;
 }
 
 describe("agents view state", () => {
@@ -894,7 +901,12 @@ describe("agents view state", () => {
 		});
 
 		const [record] = reconcileUnifiedSessions([daemon], [saved]);
-		expect(record).toMatchObject({ daemon, saved, identity: "file:/tmp/sessions/merged.jsonl", section: "idle" });
+		expect(record).toMatchObject({
+			daemon,
+			saved,
+			identity: sessionIdentity("/tmp/sessions/merged.jsonl"),
+			section: "idle",
+		});
 		expect(record?.searchableText).toContain("uniquely searchable transcript");
 		expect(record?.searchableText).toContain("lunar regression");
 		expect(buildAgentsViewRows([record!])[0]).toMatchObject({
@@ -1029,9 +1041,9 @@ describe("agents view state", () => {
 		const enriched = enrichedRecords.find((record) => record.daemon?.sessionId === parent.sessionId);
 		const expanded = buildAgentsViewRows(enrichedRecords, new Set([live!.identity]), new Set([live!.identity]));
 
-		expect(inactive).toMatchObject({ identity: "file:/tmp/saved.jsonl", section: "inactive" });
+		expect(inactive).toMatchObject({ identity: sessionIdentity("/tmp/saved.jsonl"), section: "inactive" });
 		expect(enriched).toMatchObject({ identity: live?.identity, section: "idle", saved });
-		expect(enriched?.identityAliases).toContain("file:/tmp/saved.jsonl");
+		expect(enriched?.identityAliases).toContain(sessionIdentity("/tmp/saved.jsonl"));
 		expect(expanded.map((row) => row.kind)).toContain("subagent-code");
 		expect(expanded.some((row) => row.kind === "subagent" && row.summary.sessionId === "child-session")).toBe(true);
 	});

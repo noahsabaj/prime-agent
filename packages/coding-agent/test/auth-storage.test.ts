@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerOAuthProvider } from "@earendil-works/pi-ai/oauth";
@@ -6,6 +6,7 @@ import lockfile from "proper-lockfile";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { clearConfigValueCache } from "../src/core/resolve-config-value.js";
+import { expectFileMode } from "./utilities.js";
 
 describe("AuthStorage", () => {
 	let tempDir: string;
@@ -551,7 +552,7 @@ describe("AuthStorage", () => {
 
 			const config = JSON.parse(readFileSync(primeConfigPath, "utf-8")) as Record<string, unknown>;
 			expect(config.api_key).toBe("new-prime-key");
-			expect(statSync(primeConfigPath).mode & 0o777).toBe(0o600);
+			expectFileMode(primeConfigPath, 0o600);
 			expect(authStorage.has("prime-inference")).toBe(false);
 			await expect(authStorage.getApiKey("prime-inference")).resolves.toBe("new-prime-key");
 		});
