@@ -232,7 +232,16 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 			if (existsSync(tempDir)) {
 				// Spawned fixture processes may still be flushing their final registry
 				// writes; retry briefly instead of failing the suite on ENOTEMPTY.
-				rmSync(tempDir, { recursive: true, force: true, maxRetries: 40, retryDelay: 50 });
+				try {
+					rmSync(tempDir, { recursive: true, force: true, maxRetries: 40, retryDelay: 50 });
+				} catch (error) {
+					// Windows refuses to unlink a file another handle still holds, and a
+					// fixture process can outlive the retry window. Leaking a temp dir is
+					// not a test result; the OS reclaims it.
+					if (process.platform !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM") {
+						throw error;
+					}
+				}
 			}
 		},
 	};
