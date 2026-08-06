@@ -22,6 +22,10 @@ afterAll(() => {
 	else process.env.PRIME_AGENT_KERNEL_FORKSERVER = savedForkFlag;
 });
 
+// The stub is a `#!/bin/sh` script, which Windows cannot execute: `spawn`
+// refuses `.cmd`/`.bat` without a shell and there is no way to write an
+// executable stub `python.exe`. Tests that count stub runs skip there; the ones
+// that assert a kernel never spawned still hold, since it never does.
 function writeFakePython(opts: { sleepSeconds?: number } = {}): { python: string; countRuns: () => number } {
 	const python = join(tempDir, "python");
 	const countFile = join(tempDir, "runs");
@@ -84,7 +88,7 @@ describe("IpythonKernelProvisioner", () => {
 		}
 	});
 
-	it("memoizes concurrent ensure() calls into one startup", async () => {
+	it.skipIf(process.platform === "win32")("memoizes concurrent ensure() calls into one startup", async () => {
 		const { python, countRuns } = writeFakePython();
 		const provisioner = new IpythonKernelProvisioner(tempDir, { python });
 
@@ -94,28 +98,34 @@ describe("IpythonKernelProvisioner", () => {
 		expect(countRuns()).toBe(1);
 	});
 
-	it("retries after a failed startup instead of caching the rejection", async () => {
-		const { python, countRuns } = writeFakePython();
-		const provisioner = new IpythonKernelProvisioner(tempDir, { python });
+	it.skipIf(process.platform === "win32")(
+		"retries after a failed startup instead of caching the rejection",
+		async () => {
+			const { python, countRuns } = writeFakePython();
+			const provisioner = new IpythonKernelProvisioner(tempDir, { python });
 
-		await expect(provisioner.ensure()).rejects.toThrow(/Kernel exited before resolving ports/);
-		await expect(provisioner.ensure()).rejects.toThrow(/Kernel exited before resolving ports/);
-		expect(countRuns()).toBe(2);
-	});
+			await expect(provisioner.ensure()).rejects.toThrow(/Kernel exited before resolving ports/);
+			await expect(provisioner.ensure()).rejects.toThrow(/Kernel exited before resolving ports/);
+			expect(countRuns()).toBe(2);
+		},
+	);
 
-	it("prewarm() swallows the failure and the next ensure() starts fresh", async () => {
-		const { python, countRuns } = writeFakePython();
-		const provisioner = new IpythonKernelProvisioner(tempDir, { python });
+	it.skipIf(process.platform === "win32")(
+		"prewarm() swallows the failure and the next ensure() starts fresh",
+		async () => {
+			const { python, countRuns } = writeFakePython();
+			const provisioner = new IpythonKernelProvisioner(tempDir, { python });
 
-		provisioner.prewarm();
-		expect(provisioner.manager).toBeUndefined();
+			provisioner.prewarm();
+			expect(provisioner.manager).toBeUndefined();
 
-		// Once the prewarm startup settles, ensure() must launch a second attempt.
-		await vi.waitFor(async () => {
-			await expect(provisioner.ensure()).rejects.toThrow();
-			expect(countRuns()).toBeGreaterThanOrEqual(2);
-		});
-	});
+			// Once the prewarm startup settles, ensure() must launch a second attempt.
+			await vi.waitFor(async () => {
+				await expect(provisioner.ensure()).rejects.toThrow();
+				expect(countRuns()).toBeGreaterThanOrEqual(2);
+			});
+		},
+	);
 
 	it("replays the current startup stage to listeners attaching mid-flight", async () => {
 		const { python } = writeFakePython({ sleepSeconds: 1 });
@@ -171,7 +181,7 @@ describe("IpythonKernelProvisioner", () => {
 		expect(provisioner.manager).toBeUndefined();
 	});
 
-	it("waits for readyGate before starting the kernel", async () => {
+	it.skipIf(process.platform === "win32")("waits for readyGate before starting the kernel", async () => {
 		const { python, countRuns } = writeFakePython();
 		let release: () => void = () => {};
 		const gate = new Promise<void>((r) => {

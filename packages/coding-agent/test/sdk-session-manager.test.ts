@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { getModel } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAgentSession } from "../src/core/sdk.js";
 import { SessionManager } from "../src/core/session-manager.js";
+import { removeTempDir } from "./utilities.js";
 
 describe("createAgentSession session manager defaults", () => {
 	let tempDir: string;
@@ -21,7 +22,7 @@ describe("createAgentSession session manager defaults", () => {
 
 	afterEach(() => {
 		if (tempDir && existsSync(tempDir)) {
-			rmSync(tempDir, { recursive: true, force: true });
+			removeTempDir(tempDir);
 		}
 	});
 
@@ -40,7 +41,7 @@ describe("createAgentSession session manager defaults", () => {
 		const sessionFile = session.sessionManager.getSessionFile();
 
 		expect(sessionDir).toBe(expectedSessionDir);
-		expect(sessionFile?.startsWith(`${expectedSessionDir}/`)).toBe(true);
+		expect(sessionFile?.startsWith(`${expectedSessionDir}${sep}`)).toBe(true);
 
 		session.dispose();
 	});
@@ -78,11 +79,17 @@ describe("createAgentSession session manager defaults", () => {
 		});
 
 		expect(session.sessionManager).toBe(sessionManager);
-		expect(session.systemPrompt).toContain(`Working directory: ${sessionCwd}`);
+		// The prompt reports paths with forward slashes so the Python the model
+		// writes does not read a Windows separator as an escape.
+		expect(session.systemPrompt).toContain(`Working directory: ${sessionCwd.split(sep).join("/")}`);
 
 		const ipythonTool = session.agent.state.tools.find((tool) => tool.name === "ipython");
 		expect(ipythonTool).toBeTruthy();
-		const result = await ipythonTool!.execute("test", { code: "%%bash\npwd" });
+		// IPython's own `%%bash` magic picks whatever bash it finds on PATH, which
+		// on Windows can be WSL's — and WSL reports a different filesystem view
+		// ("/mnt/c/..."), so ask the kernel itself where it is instead.
+		const cwdCode = process.platform === "win32" ? "import os; print(os.getcwd())" : "%%bash\npwd";
+		const result = await ipythonTool!.execute("test", { code: cwdCode });
 		const output = result.content
 			.filter((item): item is { type: "text"; text: string } => item.type === "text")
 			.map((item) => item.text)
