@@ -88,9 +88,7 @@ Two Windows differences are worth knowing:
   resolved above. Set `shellPath` if you want a specific one.
 - Self-update infers a custom npm prefix only when npm's own shim sits beside
   the install. Otherwise `prime-agent update` targets npm's default prefix.
-- Daemon-backed headless client modes (`--print`, `--mode json`, `--mode rpc`
-  routed through a supervisor) do not yet complete a session: the supervisor
-  launches a worker, the worker passes its startup gate, and the supervisor
-  then times out connecting to the worker's pipe. Interactive sessions and the
-  owned-worker frontend (`PRIME_AGENT_INTERNAL_LEGACY_OWNED_WORKER_FRONTEND=1`)
-  are unaffected.
+- A daemon-backed run is slow to start. It boots three Node processes, and a
+  cold worker needs roughly nine seconds to reach `listen()` on Windows, so a
+  one-shot `--print` against a fresh daemon can take the better part of a
+  minute. Reattaching to a running daemon skips most of that.
