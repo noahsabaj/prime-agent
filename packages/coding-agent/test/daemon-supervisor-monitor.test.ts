@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DaemonSocketClient } from "../src/modes/daemon/active-session-state.js";
@@ -191,7 +191,7 @@ function createExistingLaunchWorker(root: string, descriptorDir: string) {
 			socketPath: join(root, `${workerId}.sock`),
 			recoveryJournalPath: join(descriptorDir, `${workerId}.recovery.jsonl`),
 			orphanProcessJournalPath: join(descriptorDir, `${workerId}.orphans.jsonl`),
-			supervisorSocketPath: join(root, "supervisor.sock"),
+			supervisorSocketPath: supervisorSocketPathFor(root),
 			authenticationToken: "existing-worker-token",
 			rootActiveSessionId: "existing-root-session",
 			createdAt: now,
@@ -268,6 +268,18 @@ function createHarness(canConnect: () => Promise<boolean>): SupervisorMonitorHar
 		canConnectToSupervisor: vi.fn(canConnect),
 		launchReplacementSupervisor: vi.fn(async () => undefined),
 	}) as SupervisorMonitorHarness;
+}
+
+/**
+ * A path the local net stack can listen on.
+ *
+ * Windows has no unix sockets, so the fake supervisor sits on a named pipe —
+ * the same thing the real supervisor does there.
+ */
+function supervisorSocketPathFor(root: string): string {
+	return process.platform === "win32"
+		? `\\\\.\\pipe\\pi-test-supervisor-${basename(root)}`
+		: join(root, "supervisor.sock");
 }
 
 describe("daemon worker supervisor monitoring", () => {
@@ -537,7 +549,7 @@ describe("daemon worker supervisor monitoring", () => {
 			...createSupervisorSnapshotState(),
 			defaultSessionConfig: { cwd: root, agentDir: root },
 			descriptorDir,
-			socketPath: join(root, "supervisor.sock"),
+			socketPath: supervisorSocketPathFor(root),
 			workers,
 			assertRecoveryAllowed: vi.fn(async () => {
 				assertionCount++;
@@ -592,7 +604,7 @@ describe("daemon worker supervisor monitoring", () => {
 			...createSupervisorSnapshotState(),
 			defaultSessionConfig: { cwd: root, agentDir: root },
 			descriptorDir,
-			socketPath: join(root, "supervisor.sock"),
+			socketPath: supervisorSocketPathFor(root),
 			workers,
 			shuttingDown: false,
 			assertRecoveryAllowed: vi.fn(async () => {
@@ -662,7 +674,7 @@ describe("daemon worker supervisor monitoring", () => {
 			...createSupervisorSnapshotState(),
 			defaultSessionConfig: { cwd: root, agentDir: root },
 			descriptorDir,
-			socketPath: join(root, "supervisor.sock"),
+			socketPath: supervisorSocketPathFor(root),
 			workers,
 			shuttingDown: false,
 			assertRecoveryAllowed: vi.fn(async () => undefined),
@@ -720,7 +732,7 @@ describe("daemon worker supervisor monitoring", () => {
 			...createSupervisorSnapshotState(),
 			defaultSessionConfig: { cwd: root, agentDir: root },
 			descriptorDir,
-			socketPath: join(root, "supervisor.sock"),
+			socketPath: supervisorSocketPathFor(root),
 			workers,
 			shuttingDown: false,
 			assertRecoveryAllowed: vi.fn(async () => undefined),
@@ -780,7 +792,7 @@ describe("daemon worker supervisor monitoring", () => {
 			...createSupervisorSnapshotState(),
 			defaultSessionConfig: { cwd: root, agentDir: root },
 			descriptorDir,
-			socketPath: join(root, "supervisor.sock"),
+			socketPath: supervisorSocketPathFor(root),
 			workers,
 			shuttingDown: false,
 			assertRecoveryAllowed: vi.fn(async () => undefined),
@@ -872,7 +884,7 @@ describe("daemon worker supervisor monitoring", () => {
 			...createSupervisorSnapshotState(),
 			defaultSessionConfig: { cwd: root, agentDir: root },
 			descriptorDir,
-			socketPath: join(root, "supervisor.sock"),
+			socketPath: supervisorSocketPathFor(root),
 			workers,
 			shuttingDown: false,
 			assertRecoveryAllowed: vi.fn(async () => undefined),
@@ -2106,7 +2118,7 @@ describe("daemon worker supervisor monitoring", () => {
 
 	it("limits abort admission to mutation drain", async () => {
 		const root = mkdtempSync(`/tmp/prime-update-drain-${process.pid}-`);
-		const socketPath = join(root, "supervisor.sock");
+		const socketPath = supervisorSocketPathFor(root);
 		const supervisor = new DaemonSupervisor(socketPath, {
 			defaultSessionConfig: { cwd: root, agentDir: root },
 			descriptorDir: join(root, "workers"),

@@ -76,7 +76,14 @@ describeIfKernel("IPython RLM bootstrap (real kernel)", () => {
 			expect(result.status).toBe("ok");
 			expect(result.stdout).toContain("Task");
 
-			const bashResult = await manager.execute('%%bash\nprintf %s "$NO_COLOR"');
+			// IPython's `%%bash` magic picks whatever bash it finds on PATH, which on
+			// Windows can be WSL's — a separate environment that does not inherit the
+			// kernel's. Read the variable from the kernel itself there.
+			const noColorCode =
+				process.platform === "win32"
+					? 'import os, sys; sys.stdout.write(os.environ.get("NO_COLOR", ""))'
+					: '%%bash\nprintf %s "$NO_COLOR"';
+			const bashResult = await manager.execute(noColorCode);
 			expect(bashResult.status).toBe("ok");
 			expect(bashResult.stdout).toBe("1");
 		} finally {

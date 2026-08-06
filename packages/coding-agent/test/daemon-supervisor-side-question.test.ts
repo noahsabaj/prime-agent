@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { createConnection, type Socket } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { DaemonSocketClient } from "../src/modes/daemon/active-session-state.js";
 import { DaemonCatalogClient } from "../src/modes/daemon/daemon-catalog-process.js";
@@ -16,6 +16,18 @@ import { MutationDrainLatch } from "../src/modes/daemon/mutation-drain-latch.js"
 
 interface SupervisorHarness {
 	handleLine(client: DaemonSocketClient, line: string): Promise<void>;
+}
+
+/**
+ * A path the local net stack can listen on.
+ *
+ * Windows has no unix sockets, so the fake supervisor sits on a named pipe —
+ * the same thing the real supervisor does there.
+ */
+function supervisorSocketPathFor(root: string): string {
+	return process.platform === "win32"
+		? `\\\\.\\pipe\\pi-test-supervisor-${basename(root)}`
+		: join(root, "supervisor.sock");
 }
 
 describe("daemon supervisor side-question routing", () => {
@@ -125,7 +137,7 @@ describe("daemon supervisor side-question routing", () => {
 
 	it("rejects a protocol-6 client through the supervisor socket before state exchange", async () => {
 		const root = mkdtempSync(join(tmpdir(), "prime-supervisor-old-client-"));
-		const socketPath = join(root, "supervisor.sock");
+		const socketPath = supervisorSocketPathFor(root);
 		const supervisor = new DaemonSupervisor(socketPath, {
 			defaultSessionConfig: { cwd: root, agentDir: root },
 			descriptorDir: join(root, "workers"),
