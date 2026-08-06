@@ -47,7 +47,11 @@ function killWindowsProcessTree(pid: number): void {
 		return;
 	}
 	try {
-		spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], { stdio: "ignore", windowsHide: true });
+		// No `windowsHide` here: it sets CREATE_NO_WINDOW, which *allocates* a
+		// console for the child rather than suppressing one. Every kill would leave
+		// a console host behind, and a teardown that kills many processes leaves a
+		// desktop full of empty windows. Without it no console is created at all.
+		spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], { stdio: "ignore" });
 	} catch {
 		// taskkill is unavailable or the tree is already gone; fall back to the
 		// single process so at least the root does not linger.
