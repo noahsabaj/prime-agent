@@ -72,6 +72,12 @@ function heartbeat(id: string, nextRunAt?: string, activeSessionId = "child") {
 
 // The product derives a row identity from the canonical session path, which is
 // absolute and platform-shaped; a literal "file:/tmp/..." only matches on unix.
+//
+// The fixtures deliberately sit under a root that cannot exist. canonicalSessionPath
+// resolves as much of the path as it can, and on macOS /tmp is a symlink to
+// /private/tmp — so an identity built from a real temp path depends on whether the
+// parent directory happens to exist yet, which differs between machines and between
+// runs. An unreachable root resolves to itself everywhere.
 function sessionIdentity(sessionFile: string): string {
 	return `file:${canonicalSessionPath(sessionFile)}`;
 }
@@ -896,7 +902,7 @@ describe("agents view state", () => {
 			id: "runtime",
 			activeSessionId: "runtime",
 			sessionId: "merged-session",
-			sessionFile: "/tmp/sessions/merged.jsonl",
+			sessionFile: "/prime-agent-unreal/sessions/merged.jsonl",
 			sessionName: "Live name",
 		});
 
@@ -904,7 +910,7 @@ describe("agents view state", () => {
 		expect(record).toMatchObject({
 			daemon,
 			saved,
-			identity: sessionIdentity("/tmp/sessions/merged.jsonl"),
+			identity: sessionIdentity("/prime-agent-unreal/sessions/merged.jsonl"),
 			section: "idle",
 		});
 		expect(record?.searchableText).toContain("uniquely searchable transcript");
@@ -1020,7 +1026,11 @@ describe("agents view state", () => {
 	});
 
 	test("preserves live identity and row state when saved metadata adds a file alias", () => {
-		const saved = makeSessionInfo({ path: "/tmp/saved.jsonl", id: "saved", allMessagesText: "transcript" });
+		const saved = makeSessionInfo({
+			path: "/prime-agent-unreal/saved.jsonl",
+			id: "saved",
+			allMessagesText: "transcript",
+		});
 		const parent = makeSummary({
 			id: "parent",
 			activeSessionId: "parent",
@@ -1041,9 +1051,12 @@ describe("agents view state", () => {
 		const enriched = enrichedRecords.find((record) => record.daemon?.sessionId === parent.sessionId);
 		const expanded = buildAgentsViewRows(enrichedRecords, new Set([live!.identity]), new Set([live!.identity]));
 
-		expect(inactive).toMatchObject({ identity: sessionIdentity("/tmp/saved.jsonl"), section: "inactive" });
+		expect(inactive).toMatchObject({
+			identity: sessionIdentity("/prime-agent-unreal/saved.jsonl"),
+			section: "inactive",
+		});
 		expect(enriched).toMatchObject({ identity: live?.identity, section: "idle", saved });
-		expect(enriched?.identityAliases).toContain(sessionIdentity("/tmp/saved.jsonl"));
+		expect(enriched?.identityAliases).toContain(sessionIdentity("/prime-agent-unreal/saved.jsonl"));
 		expect(expanded.map((row) => row.kind)).toContain("subagent-code");
 		expect(expanded.some((row) => row.kind === "subagent" && row.summary.sessionId === "child-session")).toBe(true);
 	});

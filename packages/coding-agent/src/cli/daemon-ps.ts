@@ -827,8 +827,10 @@ async function stopOrphanedWorkers(
 			workerPids.get(normalizeSocketPath(socketPath));
 		if (pid === undefined) {
 			if (!probe && !(await canConnectToSocket(socketPath, 250))) {
-				removeSocketFile(socketPath);
-				stopped.push({ socketPath, action: "removed stale session worker socket" });
+				// Nothing answers, so there is no worker here to stop — just a unix
+				// socket file outliving its process. Not a failure, and not something
+				// that was "stopped" either: reporting it would make a second
+				// shutdown of an already-quiet machine look like it did work.
 				continue;
 			}
 			failed.push({ socketPath, reason: "orphaned session worker: could not identify its process" });
