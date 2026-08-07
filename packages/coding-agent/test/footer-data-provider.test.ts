@@ -77,7 +77,13 @@ function createReftableWorktree(tempDir: string): WorktreeFixture {
 	return { worktreeDir, reftableDir };
 }
 
-async function waitFor(condition: () => boolean, timeoutMs = 3000): Promise<void> {
+// These wait on a filesystem watcher, so the budget has to cover the platform's
+// notification latency plus FooterDataProvider's own 500ms debounce. Linux inotify
+// reports almost immediately, but macOS fs.watch is backed by FSEvents, which
+// coalesces and can take seconds on a loaded machine — 3s failed intermittently on
+// macOS CI while passing everywhere else. Waiting longer costs nothing when the
+// condition holds, since the loop exits as soon as it does.
+async function waitFor(condition: () => boolean, timeoutMs = 15_000): Promise<void> {
 	const startedAt = Date.now();
 	while (!condition()) {
 		if (Date.now() - startedAt > timeoutMs) {
