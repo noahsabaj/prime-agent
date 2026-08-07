@@ -98,7 +98,10 @@ Two Windows differences are worth knowing:
   fires: a child in that shape sees no `disconnect`, no `uncaughtException`, and
   not even its own `exit` handler. A frontend that exits normally still unwinds
   gracefully through stdin EOF.
-- Kernel-backed tests can time out under the full suite's parallelism. Each one
-  starts a real IPython kernel, and Windows process startup is slow enough that
-  several at once can exceed a 30s test timeout. They pass run individually; if
-  you see them fail together, re-run the file on its own before believing it.
+- Process-backed tests can time out under load. Anything that starts a real
+  process — an IPython kernel, a daemon supervisor, a session worker — competes
+  for a Windows process startup that is slow enough for several at once to
+  exceed a 30s test timeout. Seen locally under the full suite's parallelism and
+  on CI runners slower than a developer machine. The tell is that the failing
+  set moves between runs rather than staying put, and the files pass when run on
+  their own; re-run a file individually before believing a failure.
