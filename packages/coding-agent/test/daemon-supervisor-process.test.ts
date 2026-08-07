@@ -496,6 +496,13 @@ describe("daemon supervisor resident workers", () => {
 		await waitForCondition(
 			() => countWorkerDescriptors(agentDir) === 0,
 			"Client-owned worker descriptor was not removed",
+			// The descriptor goes only after the supervisor finishes its recovery
+			// walk, and that budget is larger than this helper's 10s default:
+			// WORKER_RETRY_DELAYS_MS alone is 6.25s, plus a connect attempt per retry
+			// and, on Windows, a process-identity lookup per retry that costs a
+			// PowerShell start. That totals past 10s on a slow runner, which is why
+			// this failed only on Windows CI while passing everywhere else.
+			30_000,
 		);
 		expect((await readSessionInfo(sessionFile))?.state?.status).not.toBe("archived");
 
