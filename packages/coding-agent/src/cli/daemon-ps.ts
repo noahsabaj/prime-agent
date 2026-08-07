@@ -812,16 +812,25 @@ async function stopOrphanedWorkers(
 		// client can ever authenticate. Stop the process itself.
 		//
 		// A failed probe is therefore the common case, not the exceptional one, and
-		// must not be read as "already stopped". The socket was just enumerated as
-		// live — a Windows pipe exists only while something serves it — so bailing
-		// out here left the worker running to relaunch a replacement supervisor,
-		// which is what kept shutdown from converging. Fall back to the pid its
-		// supervisor persisted; it is start-id verified above, so a recycled pid is
-		// never signalled.
+		// must not be read as "already stopped": bailing out on it left the worker
+		// running to relaunch a replacement supervisor, which is what kept shutdown
+		// from converging. Fall back to the pid its supervisor persisted; it is
+		// start-id verified above, so a recycled pid is never signalled.
+		//
+		// But "the socket was enumerated" only implies a live server on Windows,
+		// where a pipe exists solely while something serves it. A unix socket is a
+		// file that outlives its process, so a silent probe there is usually just a
+		// leftover file. Unlink it and move on — reporting it as an unidentifiable
+		// worker would fail `shutdown --force` over nothing.
 		const pid =
 			(probe ? verifyHelloSupervisorPid(probe.pid, probe.startId) : undefined) ??
 			workerPids.get(normalizeSocketPath(socketPath));
 		if (pid === undefined) {
+			if (!probe && !(await canConnectToSocket(socketPath, 250))) {
+				removeSocketFile(socketPath);
+				stopped.push({ socketPath, action: "removed stale session worker socket" });
+				continue;
+			}
 			failed.push({ socketPath, reason: "orphaned session worker: could not identify its process" });
 			continue;
 		}

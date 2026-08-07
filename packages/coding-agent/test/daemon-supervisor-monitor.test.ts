@@ -2141,7 +2141,10 @@ describe("daemon worker supervisor monitoring", () => {
 	});
 
 	it("limits abort admission to mutation drain", async () => {
-		const root = mkdtempSync(`/tmp/prime-update-drain-${process.pid}-`);
+		// tmpdir(), not a hardcoded /tmp: on Windows that resolves to <drive>:\tmp,
+		// which need not exist, and mkdtemp then fails before the test body runs.
+		// Every other case in this file already does it this way.
+		const root = mkdtempSync(join(tmpdir(), `prime-update-drain-${process.pid}-`));
 		const socketPath = supervisorSocketPathFor(root);
 		const supervisor = new DaemonSupervisor(socketPath, {
 			defaultSessionConfig: { cwd: root, agentDir: root },

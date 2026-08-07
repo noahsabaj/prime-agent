@@ -237,8 +237,11 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 				} catch (error) {
 					// Windows refuses to unlink a file another handle still holds, and a
 					// fixture process can outlive the retry window. Leaking a temp dir is
-					// not a test result; the OS reclaims it.
-					if (process.platform !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM") {
+					// not a test result; the OS reclaims it. It reports that refusal as
+					// EPERM, EBUSY, or ENOTEMPTY depending on what is held and how, so
+					// tolerate all three rather than only the one seen first.
+					const code = (error as NodeJS.ErrnoException).code ?? "";
+					if (process.platform !== "win32" || !["EPERM", "EBUSY", "ENOTEMPTY"].includes(code)) {
 						throw error;
 					}
 				}
