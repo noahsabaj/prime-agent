@@ -2223,6 +2223,9 @@ export class DaemonSupervisor {
 			stdio: startupGate.stdioSlot
 				? ["ignore", "ignore", "pipe", startupGate.stdioSlot]
 				: ["ignore", "ignore", "pipe"],
+			// Every session starts a worker from a console-less daemon, so without
+			// this each one opens a visible console window. No-op elsewhere.
+			windowsHide: true,
 		});
 		const detachWorkerStderr = child.stderr
 			? attachJsonlLineReader(child.stderr, (line) => this.log(`Session worker ${workerId} stderr: ${line}`), {
@@ -4945,6 +4948,9 @@ export class DaemonSupervisor {
 				detached: true,
 				env: environment,
 				stdio: "ignore",
+				// Same as the worker spawn above: console-less parent, nothing to
+				// display, so keep Windows from opening a window. No-op elsewhere.
+				windowsHide: true,
 			});
 			replacement.unref();
 		}

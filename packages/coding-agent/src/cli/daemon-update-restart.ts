@@ -552,6 +552,9 @@ export async function launchDaemonUpdateRestartCoordinator(
 		detached: true,
 		env: coordinatorEnvironment(agentDir),
 		stdio: "ignore",
+		// The coordinator reports through the status file, not a console. Progress
+		// is rendered by the caller, so hide the window on Windows.
+		windowsHide: true,
 	});
 	let launchError: Error | undefined;
 	let exitDescription: string | undefined;

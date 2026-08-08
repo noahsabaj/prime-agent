@@ -107,6 +107,9 @@ export class RpcClient {
 			cwd: this.options.cwd,
 			env: { ...process.env, ...this.options.env },
 			stdio: ["pipe", "pipe", "pipe"],
+			// Every stream is piped, so the child has no console of its own to use.
+			// No-op off Windows.
+			windowsHide: true,
 		});
 
 		// Collect stderr for debugging

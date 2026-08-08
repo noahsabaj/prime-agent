@@ -98,6 +98,9 @@ function runCommand(
 		timeout: timeoutMs,
 		maxBuffer: maxBufferBytes,
 		env: options?.env,
+		// On Windows this reads the clipboard through PowerShell, which would
+		// otherwise flash a console window on every paste. No-op elsewhere.
+		windowsHide: true,
 	});
 
 	if (result.error) {

@@ -2397,6 +2397,9 @@ export class DefaultPackageManager implements PackageManager {
 			stdio: ["ignore", "pipe", "pipe"],
 			shell: shouldUseWindowsShell(command),
 			env: options?.env ? { ...baseEnv, ...options.env } : baseEnv,
+			// Captured, not displayed — unlike spawnCommand above, which inherits.
+			// No-op off Windows.
+			windowsHide: true,
 		});
 	}
 
@@ -2464,6 +2467,8 @@ export class DefaultPackageManager implements PackageManager {
 			encoding: "utf-8",
 			shell: shouldUseWindowsShell(command),
 			env: getEnv(),
+			// Captured, not displayed. No-op off Windows.
+			windowsHide: true,
 		});
 		if (result.error || result.status !== 0) {
 			throw new Error(

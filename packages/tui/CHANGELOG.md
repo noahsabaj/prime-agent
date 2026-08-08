@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Fixed file autocomplete opening a console window per keystroke on Windows by hiding the `fd` subprocess ([#735](https://github.com/PrimeIntellect-ai/prime-agent/issues/735)).
+
 ## [0.7.1] - 2026-08-07
 
 ## [0.7.0] - 2026-08-05

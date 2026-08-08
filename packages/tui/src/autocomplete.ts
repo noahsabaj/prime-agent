@@ -164,6 +164,10 @@ async function walkDirectoryWithFd(
 
 		const child = spawn(fdPath, args, {
 			stdio: ["ignore", "pipe", "pipe"],
+			// One fd run per keystroke while completing a file path. On Windows a
+			// console-less parent gives each run a visible console window, so typing
+			// flashes a window per character. No-op elsewhere.
+			windowsHide: true,
 		});
 		let stdout = "";
 		let resolved = false;

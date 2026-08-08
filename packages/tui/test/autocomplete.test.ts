@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it, test } from "node:test";
@@ -289,6 +289,29 @@ describe("CombinedAutocompleteProvider", () => {
 			if (result) {
 				assert.strictEqual(result.prefix, "/", "Prefix should be '/'");
 			}
+		});
+	});
+
+	describe("fd subprocess launch", () => {
+		/**
+		 * File completion runs fd once per keystroke. On Windows a parent without a
+		 * console — every daemon-started frontend — gives each run a console window
+		 * of its own, so typing a path flashes a window per character (#735).
+		 *
+		 * The assertion reads the source because the seam cannot be intercepted at
+		 * runtime: `autocomplete.ts` binds `spawn` through an ESM named import, and
+		 * an ESM binding to a builtin does not observe writes to the CommonJS
+		 * `child_process` exports.
+		 */
+		it("passes windowsHide to every spawn", () => {
+			const source = readFileSync(new URL("../src/autocomplete.ts", import.meta.url), "utf-8");
+			const calls = source.split(/\bspawn\(/).slice(1);
+
+			assert.ok(calls.length > 0, "expected autocomplete.ts to spawn a subprocess");
+			calls.forEach((call, index) => {
+				const options = call.slice(0, call.indexOf("});"));
+				assert.match(options, /windowsHide:\s*true/, `spawn call ${index + 1} is missing windowsHide: true`);
+			});
 		});
 	});
 

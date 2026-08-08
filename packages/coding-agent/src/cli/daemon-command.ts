@@ -696,6 +696,9 @@ async function runStart(parsed: ParsedDaemonClientCommand): Promise<void> {
 		detached: true,
 		env: process.env,
 		stdio: "ignore",
+		// Detached with no stdio, so the daemon has nothing to show. Without this
+		// Windows gives it a console window that outlives this CLI. No-op elsewhere.
+		windowsHide: true,
 	});
 	child.unref();
 

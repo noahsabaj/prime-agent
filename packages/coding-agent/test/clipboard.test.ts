@@ -121,6 +121,9 @@ describe("copyToClipboard", () => {
 			input: "hello",
 			stdio: ["pipe", "ignore", "ignore"],
 			timeout: 5000,
+			// `clip` shares these options on Windows, where a copy would otherwise
+			// flash a console window.
+			windowsHide: true,
 		});
 		expect(osc52Writes()).toHaveLength(0);
 	});

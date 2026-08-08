@@ -826,6 +826,9 @@ export class AgentDaemon {
 				detached: true,
 				env: environment,
 				stdio: "ignore",
+				// The parent is a console-less daemon, so the replacement supervisor
+				// would get a visible console window on Windows. No-op elsewhere.
+				windowsHide: true,
 			});
 			child.unref();
 			const deadline = Date.now() + 10_000;
