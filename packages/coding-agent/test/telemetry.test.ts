@@ -1,4 +1,4 @@
-import { lstatSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -17,6 +17,31 @@ import {
 	type TelemetrySink,
 	telemetryAuthCategory,
 } from "../src/core/telemetry.js";
+
+/**
+ * Windows does not implement POSIX permission bits. Every file reads back as
+ * `0o666` whatever mode it was written with, so the private-mode assertion can
+ * only run where the mode survives.
+ */
+const filePermissionsAreObservable = process.platform !== "win32";
+
+/**
+ * Creating a file symlink on Windows needs SeCreateSymbolicLinkPrivilege, which
+ * only Developer Mode or an elevated shell grants. Probe once so the symlink
+ * case skips instead of failing on an ordinary Windows account.
+ */
+const symlinksAreSupported = ((): boolean => {
+	const probeDir = mkdtempSync(join(tmpdir(), "prime-agent-symlink-probe-"));
+	try {
+		writeFileSync(join(probeDir, "target.txt"), "probe");
+		symlinkSync(join(probeDir, "target.txt"), join(probeDir, "link.txt"));
+		return true;
+	} catch {
+		return false;
+	} finally {
+		rmSync(probeDir, { recursive: true, force: true });
+	}
+})();
 
 function uuidGenerator(): () => string {
 	let counter = 0;
@@ -113,7 +138,9 @@ describe("telemetry identity and transport", () => {
 			version: 1,
 			installationId: first,
 		});
-		expect(statSync(path).mode & 0o777).toBe(0o600);
+		if (filePermissionsAreObservable) {
+			expect(statSync(path).mode & 0o777).toBe(0o600);
+		}
 	});
 
 	it("replaces invalid persisted installation state", () => {
@@ -131,7 +158,7 @@ describe("telemetry identity and transport", () => {
 		expect(getOrCreateTelemetryInstallationId(agentDir, randomId)).toBe(installationId);
 	});
 
-	it("does not follow a telemetry state symlink", async () => {
+	it.skipIf(!symlinksAreSupported)("does not follow a telemetry state symlink", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "prime-agent-telemetry-"));
 		const targetPath = join(agentDir, "target.json");
 		const telemetryPath = join(agentDir, "telemetry.json");
