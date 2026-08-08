@@ -17,7 +17,10 @@ function bundledAgentObserveSkill(): PythonSkillRuntimeInfo {
 	};
 }
 
-describe("agent-observe skill over the kernel host bridge", () => {
+// Every case here provisions and drives a live IPython kernel, which is the same
+// work `ipython-bootstrap` and `kernel-state-roundtrip` already give 60s. Windows
+// pays a slower interpreter start than the 30s vitest default allows.
+describe("agent-observe skill over the kernel host bridge", { timeout: 60_000 }, () => {
 	let tempDir: string;
 	let provisioner: IpythonKernelProvisioner | undefined;
 
